@@ -69,5 +69,5 @@ not written down yet.
 **The full write-up** walks through it step by step, with the metadata each step produces, the
 seven checks, and a single file you can paste into a terminal and run (no API key, no sign-up):
 
-- Full article on Medium: *[paste your Medium link here once published]*
+- Full article on Medium: [The Semantic Layer for BI and AI](https://medium.com/@beenakhandelwal/bce4e252ebfd)
 - Code: [github.com/BeenaKhandelwal/semantic-layer-nl](https://github.com/BeenaKhandelwal/semantic-layer-nl)
