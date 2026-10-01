@@ -1,4 +1,4 @@
-# The Semantic Layer Is Not the Destination. It Is What Makes "Just Ask the Data" Trustworthy.
+# The Semantic Layer for BI and AI: A Step-by-Step Guide to Trustworthy Natural-Language Analytics
 
 **An implementation guide, with the sample metadata each phase actually produces.**
 
