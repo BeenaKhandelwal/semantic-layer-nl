@@ -62,72 +62,65 @@ strong { color: #0f2942; }
 a { color: #1c5f9e; text-decoration: none; }
 </style></head><body>
 <h1 id="the-semantic-layer-for-bi-and-ai-a-step-by-step-guide-to-trustworthy-natural-language-analytics">The Semantic Layer for BI and AI: A Step-by-Step Guide to Trustworthy Natural-Language Analytics</h1>
-<p><strong>A story in three diagrams, nine artifacts, and one number nobody in the room could defend.</strong></p>
+<p><strong>How we built a system where "just ask the data" gives you an answer you can actually defend.</strong></p>
 <hr />
-<h2 id="the-afternoon-two-numbers-disagreed">The afternoon two numbers disagreed</h2>
-<p>It was a quarterly review. The slide said on-time delivery for India last month was <strong>88.5%</strong>.
-Someone had re-run the same question that morning — <em>"on-time delivery for India warehouses
-last month"</em> — against the same DuckDB file, the same 132 orders, the same SQL dialect. They
-got <strong>87.3%</strong>.</p>
-<p>Two numbers. One afternoon. One of them is wrong, and nobody in the room could say which.</p>
-<p>That is the real problem, and it is worth being precise about why. Nothing crashed. No query
-threw an error. Both numbers are plausible, both round cleanly, and both have a SQL statement
-behind them that a competent engineer would sign off on. The disagreement is quiet, and quiet
-is exactly what makes it dangerous.</p>
+<h2 id="two-numbers-one-meeting">Two numbers, one meeting</h2>
+<p>In a quarterly review, the slide said on-time delivery for India last month was 88.5%. That
+same morning, someone had asked the exact same question of the exact same data: "on-time
+delivery for India warehouses last month." They got 87.3%.</p>
+<p>Two numbers. Same data, same day. One of them is wrong, and nobody in the meeting could tell
+which one.</p>
+<p>It helps to be clear about why that is a problem. Nothing crashed. No query failed. Both numbers
+look reasonable, both round nicely, and both have real SQL behind them that any engineer would
+have approved. The disagreement is quiet. Quiet is what makes it dangerous.</p>
 <p><img alt="One order, two boxes, counted two ways" src="../docs/diagrams/grain_two_ways.svg" /></p>
-<p><em>One order that ships in two boxes can be counted as a single order or as two shipments. Count
-the shipments and you get 88.5%; count the orders and you get 87.3%. Full resolution:
-<a href="../docs/diagrams/grain_two_ways.svg"><code>docs/diagrams/grain_two_ways.svg</code></a> — scaled to fit the
-page here.</em></p>
+<p><em>One order that ships in two boxes can be counted as one order or as two shipments. Count the
+shipments and you get 88.5%. Count the orders and you get 87.3%. Full-size version:
+<a href="../docs/diagrams/grain_two_ways.svg"><code>docs/diagrams/grain_two_ways.svg</code></a>.</em></p>
 <h2 id="where-the-wrong-number-comes-from">Where the wrong number comes from</h2>
-<p>Here is where 88.5% is hiding. The delivery table has one row per delivery <em>leg</em>. An order that
-ships in two legs — partial shipment on Tuesday, the rest on Friday — has two rows. Join orders
-to legs and count, and that order votes twice. Worse: if the first leg arrived before the
-promised date, the order looks on time <em>twice over</em>, while the second leg that actually blew the
-promise is one row lost among sixty.</p>
-<p><strong>61 legs. 55 orders.</strong></p>
+<p>The delivery table has one row per delivery leg, not one row per order. An order that ships in
+two parts has two rows. Join orders to legs and count, and that order gets counted twice. If the
+first part arrived on time, the order now looks on time twice over, while the late second part is
+just one row among sixty.</p>
+<p>Count it both ways and you get two answers:</p>
 <ul>
-<li>Order grain: <strong>48 / 55 = 87.27%</strong></li>
-<li>Delivery grain: <strong>54 / 61 = 88.52%</strong></li>
+<li>By order: 48 of 55 = 87.3%</li>
+<li>By leg: 54 of 61 = 88.5%</li>
 </ul>
-<p>The gap is <strong>1.25 points</strong>. It is small enough to look like rounding, and it always errs
-<em>upward</em>. A wrong number that flatters you is the one that survives to the board deck, because
-nobody re-checks a figure that confirms the story they wanted to tell.</p>
-<p>The model did not hallucinate. It wrote syntactically valid, semantically reasonable SQL against
-a table whose <em>grain</em> — what a single row is supposed to mean — nobody had written down anywhere
-it could read. <strong>The failure was in the metadata, so the fix has to be in the metadata.</strong></p>
-<h2 id="the-one-decision-everything-else-follows-from">The one decision everything else follows from</h2>
-<p>Everything below is a consequence of a single rule:</p>
+<p>The gap is 1.25 points. Small enough to pass for rounding, and it always lands on the high side.
+The flattering number is the one that reaches the board slide, because nobody double-checks good
+news.</p>
+<p>The model did not invent anything. It wrote correct SQL against a table where nobody had written
+down what a single row means. The mistake was in the metadata, so the fix has to be there too.</p>
+<h2 id="the-one-rule-everything-is-built-on">The one rule everything is built on</h2>
+<p>Everything below follows from a single rule:</p>
 <blockquote>
-<p><strong>The model never writes SQL and never does arithmetic.</strong> It reads a governed metadata slice
-and emits a validated JSON object — which metric, which filters, which time window. A
-deterministic compiler turns that object into SQL.</p>
+<p>The model never writes SQL and never does the math. It reads a small, approved slice of
+metadata and fills in a form: which metric, which filters, which dates. A plain compiler turns
+that form into SQL.</p>
 </blockquote>
-<p>This is the inversion that matters. Text-to-SQL asks a language model to be right about grain,
-joins, exclusions and fiscal calendars on <em>every single call</em>. This architecture asks it to be
-right about one much easier thing: <strong>which of three approved metrics you meant.</strong> Everything
-that has to be exactly right is compiled from metadata, by code, the same way every time. Two
-people asking the same question in different words get the same number — because the number was
-never in the model's hands.</p>
-<p><img alt="Metadata to natural-language dataflow" src="../docs/diagrams/nl_dataflow.svg" /></p>
-<p><em>The pipeline is six stages: retriever → resolver → validator → compiler → executor →
-provenance. Only the resolver calls a model. Only the compiler writes SQL. Validation runs
-</em>before<em> compilation, so a refused question never becomes SQL at all. Full resolution:
+<p>Here is why that helps. Ordinary text-to-SQL asks the model to get grain, joins, exclusions and
+the fiscal calendar right on every single question. This setup asks it one much easier thing:
+which of three approved metrics did you mean. Everything that has to be exact is built from
+metadata, by code, the same way each time. Two people who word the question differently get the
+same number, because the number was never the model's to choose.</p>
+<p><img alt="How a question becomes an answer" src="../docs/diagrams/nl_dataflow.svg" /></p>
+<p><em>Six steps: retriever, resolver, validator, compiler, executor, provenance. Only the resolver
+calls a model. Only the compiler writes SQL. The checks run before any SQL exists, so a rejected
+question never becomes SQL at all. Full-size version:
 <a href="../docs/diagrams/nl_dataflow.svg"><code>docs/diagrams/nl_dataflow.svg</code></a>.</em></p>
-<p>The two rows worth a second look are the validator and the compiler: <strong>neither ever opens a
-file.</strong> Both receive a parsed <code>SemanticModel</code>, which means the compiler has no access to the
-glossary. Vocabulary is resolved <em>before</em> the gates, so which synonym a user happened to type
-can never reach the arithmetic.</p>
-<h2 id="building-it-one-phase-at-a-time">Building it, one phase at a time</h2>
-<p>The method is one rule applied eight times: <strong>each phase produces a real file and closes one
-specific way natural-language querying fails.</strong> A phase that doesn't close a named failure is a
-phase you can skip.</p>
+<p>One detail is worth a look: the validator and the compiler never read a file. They work from a
+parsed model, so the compiler can't even see the glossary. The words are resolved before the
+checks run, which means a synonym someone typed can never reach the math.</p>
+<h2 id="building-it-one-step-at-a-time">Building it, one step at a time</h2>
+<p>The method is easy to state. Each step produces one file, and each file fixes one way that
+plain-English questions go wrong. If a step doesn't fix a named problem, you can skip it.</p>
 <table>
 <thead>
 <tr>
-<th>Phase</th>
-<th>Artifact</th>
-<th>The NL failure it closes</th>
+<th>Step</th>
+<th>File</th>
+<th>The question-answering problem it fixes</th>
 </tr>
 </thead>
 <tbody>
@@ -139,44 +132,44 @@ phase you can skip.</p>
 <tr>
 <td>P1</td>
 <td><code>01_technical_metadata.json</code></td>
-<td>Column names harvested from SAP DDIC, with no business meaning</td>
+<td>Column names pulled from SAP, with no business meaning</td>
 </tr>
 <tr>
 <td>P2</td>
 <td><code>02_standardized_metadata.json</code></td>
-<td>Types and keys inconsistent across source systems</td>
+<td>Types and keys don't line up across source systems</td>
 </tr>
 <tr>
 <td>P3</td>
 <td><code>03_glossary.yml</code> + <code>03_column_bindings.yml</code></td>
-<td>"OTD", "delivery reliability", "promise adherence" reach no column</td>
+<td>"OTD", "delivery reliability", "promise adherence" map to no column</td>
 </tr>
 <tr>
 <td>P4</td>
 <td><code>04_process_model.yml</code></td>
-<td>The model can answer <em>what</em> happened, never <em>why</em></td>
+<td>You can answer <em>what</em> happened, but never <em>why</em></td>
 </tr>
 <tr>
 <td>P5</td>
 <td><code>05_semantic_model.yml</code></td>
-<td>The model invents its own arithmetic — <strong>this is where 88.5% dies</strong></td>
+<td>The model makes up its own math — <strong>this is where 88.5% dies</strong></td>
 </tr>
 <tr>
 <td>P6</td>
 <td><code>06_dq_rules.yml</code></td>
-<td>A number from incomplete inputs is returned with full confidence</td>
+<td>A number built from incomplete data comes back sounding certain</td>
 </tr>
 <tr>
 <td>P7</td>
 <td><code>07_catalog_asset.json</code></td>
-<td>The answer arrives with no provenance, so nobody can defend it</td>
+<td>The answer arrives with no paper trail, so nobody can defend it</td>
 </tr>
 </tbody>
 </table>
-<p>Nine files, eight phases: P3 emits two, because a glossary term and its physical binding are
-different governance objects with different owners.</p>
-<p>Two of those files carry most of the weight. The first is the glossary (P3), where vocabulary
-is pinned down in prose the model actually reads:</p>
+<p>Nine files, eight steps: step 3 produces two, because a business term and the column it maps to
+are owned by different people.</p>
+<p>Two files do most of the work. The first is the glossary, where the words are pinned down in
+plain language the model reads:</p>
 <pre><code class="language-yaml">- term: On-Time Delivery %
   definition: &gt;
     Share of eligible customer orders delivered on or before the promised
@@ -186,8 +179,7 @@ is pinned down in prose the model actually reads:</p>
   synonyms: [OTD, on time delivery, delivery reliability, promise adherence, OTIF]
   owner: VP Supply Chain
 </code></pre>
-<p>That one sentence — <em>"one row per order_id"</em> — is doing real work. But the load-bearing artifact
-is the governed metric itself (P5):</p>
+<p>That one line, "one row per order_id," is the whole point. The second file is the metric itself:</p>
 <pre><code class="language-yaml">- name: on_time_delivery_pct
   label: On-Time Delivery %
   entity: fact_order_delivery
@@ -199,26 +191,26 @@ is the governed metric itself (P5):</p>
   exclusions:
     - key: cancelled_orders
       predicate: order_status &lt;&gt; 'CANC'
-      rationale: A cancelled order was never due; including it inflates the denominator.
+      rationale: A cancelled order was never due; counting it inflates the denominator.
   business_rules:
-    - Order-grain only. Delivery-grain aggregation double-counts split shipments.
+    - Order grain only. Counting by delivery leg double-counts split shipments.
   owner: VP Supply Chain
   approval_state: approved
 </code></pre>
-<p>Four details, each one a defect that would otherwise ship: <strong><code>grain: order</code></strong> is <em>declared</em>, not
-inferred — this is the field that kills 88.5%. Exclusions carry a <strong><code>rationale</code></strong>, so nobody
-deletes them in six months assuming they were a mistake. <strong><code>approval_state: approved</code></strong> is read
-by the retriever, so an unapproved metric is never even offered to the model. And ratios are
-declared as <strong>numerator and denominator</strong>, never a pre-averaged rate — averaging percentages
-across groups of unequal size gives a different, wrong number that looks fine.</p>
-<h2 id="seven-gates-that-fail-closed">Seven gates that fail closed</h2>
-<p>Between the model's JSON and any SQL, seven checks run. All seven run every time, and a gate
-that cannot be evaluated <strong>fails closed</strong>:</p>
+<p>Four things to notice, because each is a bug waiting to happen. <code>grain: order</code> is written down,
+not guessed. That is the line that kills 88.5%. Every exclusion carries a reason, so nobody
+deletes it next quarter thinking it was a mistake. <code>approval_state: approved</code> is checked before
+the model ever sees the metric, so it can't ask for one that isn't ready. And the ratio is stored
+as a top and a bottom, never as a finished percentage, because averaging percentages across
+groups of different sizes gives you a wrong answer that looks fine.</p>
+<h2 id="the-checks-that-say-no">The checks that say no</h2>
+<p>Before any SQL is written, seven checks run. All of them, every time. If a check can't be
+evaluated, it fails and the question is refused.</p>
 <table>
 <thead>
 <tr>
-<th>Gate</th>
-<th>Refuses</th>
+<th>Check</th>
+<th>What it refuses</th>
 </tr>
 </thead>
 <tbody>
@@ -228,11 +220,11 @@ that cannot be evaluated <strong>fails closed</strong>:</p>
 </tr>
 <tr>
 <td><code>dimensions_declared</code></td>
-<td>grouping by something the model invented</td>
+<td>grouping by something the model made up</td>
 </tr>
 <tr>
 <td><code>filters_bound</code></td>
-<td><code>region = 'MARS'</code> — a value outside the declared allowed set</td>
+<td><code>region = 'MARS'</code>, a value outside the allowed set</td>
 </tr>
 <tr>
 <td><code>grain_matches</code></td>
@@ -240,19 +232,20 @@ that cannot be evaluated <strong>fails closed</strong>:</p>
 </tr>
 <tr>
 <td><code>no_fanout</code></td>
-<td>a dimension only reachable through a one-to-many join</td>
+<td>a field only reachable through a one-to-many join</td>
 </tr>
 <tr>
 <td><code>time_window_bounded</code></td>
-<td>an unbounded or inverted date range</td>
+<td>a date range that is open-ended or backwards</td>
 </tr>
 <tr>
 <td><code>exclusions_applied</code></td>
-<td>a metric whose certified exclusions can't be applied</td>
+<td>a metric whose required exclusions can't be applied</td>
 </tr>
 </tbody>
 </table>
-<p>Put the 88.5% query through the pipeline and this is the actual output — not a paraphrase:</p>
+<p>Run the 88.5% question through the system and this is what comes back. It is the real output, not
+a paraphrase:</p>
 <pre><code>REFUSED  on_time_delivery_pct: the intent did not pass validation.
 
   gates failed  grain_matches
@@ -263,56 +256,53 @@ that cannot be evaluated <strong>fails closed</strong>:</p>
   No number is shown. A value that failed a gate is not a caveated answer,
   it is an unverified one.
 </code></pre>
-<p><em>"I can't answer that, and here is which rule stopped me"</em> is a system you can put in front of a
-CFO. One that always produces a number is not.</p>
-<h2 id="cant-we-just-harvest-this-from-sap">"Can't we just harvest this from SAP?"</h2>
-<p>This is the question that lands next, usually from whoever is being asked to fund the work. The
-honest answer is a diagram and a count.</p>
-<p><img alt="Where each metadata artifact comes from, and how it is used" src="../docs/diagrams/metadata_sources.svg" /></p>
-<p><em>Read it left to right: source → how it was collected → the artifact → when the pipeline consumes
-it. The colours are the answer to the funding question. Full resolution:
+<p>"I can't answer that, and here is the rule that stopped me" is something you can put in front of
+a CFO. A system that always hands back a number is not.</p>
+<h2 id="cant-we-just-pull-all-this-from-sap">"Can't we just pull all this from SAP?"</h2>
+<p>This is the question that comes up as soon as someone has to pay for the work. The honest answer
+is a picture and a count.</p>
+<p><img alt="Where each file comes from, and when it is used" src="../docs/diagrams/metadata_sources.svg" /></p>
+<p><em>Left to right: the source, how it was collected, the file, and when the pipeline reads it. The
+colours answer the funding question. Full-size version:
 <a href="../docs/diagrams/metadata_sources.svg"><code>docs/diagrams/metadata_sources.svg</code></a>.</em></p>
-<p><strong>Exactly one of the nine artifacts is machine-harvestable.</strong> The other eight split two ways:</p>
+<p>Only one of the nine files can be pulled from a system automatically. The other eight split two
+ways:</p>
 <table>
 <thead>
 <tr>
-<th>Provenance</th>
+<th>Where it comes from</th>
 <th>Count</th>
-<th>What it means</th>
+<th>What that means</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>HARVESTED</strong></td>
+<td><strong>Harvested</strong></td>
 <td>1</td>
-<td>a repeatable query against a running system (the SAP data dictionary)</td>
+<td>a repeatable query against a live system (the SAP data dictionary)</td>
 </tr>
 <tr>
-<td><strong>DERIVED</strong></td>
+<td><strong>Derived</strong></td>
 <td>4</td>
-<td>computed from earlier artifacts plus the data</td>
+<td>computed from earlier files plus the data</td>
 </tr>
 <tr>
-<td><strong>AUTHORED</strong></td>
+<td><strong>Authored</strong></td>
 <td>4</td>
-<td>a named human decided something no system knows</td>
+<td>a named person decided something no system knows</td>
 </tr>
 </tbody>
 </table>
-<p>Stated as a planning fact: <strong>a harvester gets you tables, fields, domains and types. It cannot
-get you grain, exclusions, an approved definition, or a standard duration</strong> — and those are
-precisely the fields that decide whether an answer is <em>right</em> rather than merely well-formed. The
-88.5% error lives in a field no crawler emits. This is why "point a catalog at the warehouse and
-turn on NL query" produces a demo, not a trustworthy system.</p>
+<p>Put plainly: a crawler gives you tables, fields and data types. It can't give you grain,
+exclusions, an agreed definition, or how long a step is supposed to take. Those are the things
+that decide whether an answer is right or only well-formed. The 88.5% mistake lives in a field no
+crawler can see. That is why pointing a catalog at a warehouse and switching on "ask the data"
+gives you a demo, not something you can trust.</p>
 <h2 id="the-question-a-dashboard-cant-answer">The question a dashboard can't answer</h2>
-<p>Descriptive questions — <em>"what was it?"</em> — need only a glossary, a grain and a metric. The
-question people actually ask is diagnostic:</p>
-<blockquote>
-<p><em>"Why did on-time delivery drop for India warehouses last month?"</em></p>
-</blockquote>
-<p>Answering it needs per-phase timestamps, per-phase planned baselines, and an attribution rule
-defined once, in metadata. This is why the manufacturing process is in scope: the answer to
-<em>why</em> lives upstream in production, not in the delivery table. Here is the real output:</p>
+<p>"What was it?" only needs a metric and a grain. The question people actually ask is "why did it
+drop?" To answer that you need a timestamp for each step, a planned baseline for each step, and
+one attribution rule written down once. That is why the factory floor is in scope: the reason
+sits upstream in production, not in the delivery table. Here is the real output:</p>
 <pre><code>ANSWER   On-Time Delivery % is 87.3% -- 48 of 55 eligible orders delivered on or
          before the promised date
 
@@ -329,40 +319,38 @@ defined once, in metadata. This is why the manufacturing process is in scope: th
     prior value                96.2% (25 / 26)
     change                     down 8.9pp (96.2% -&gt; 87.3%)
 </code></pre>
-<p>On those four orders, the quality-management usage decision ran an average of <strong>4.75 days over
-its 1.0-day standard, against 0.0 days of slack</strong> — the promise date left no room to absorb it.</p>
-<p>And here is the part that makes the case: <strong>transportation ran <em>under</em> standard on 5 of the 7
-late orders.</strong> Logistics was the obvious suspect, and logistics was faster than planned. Without
-per-phase baselines you get a plausible, confident, wrong story — and you go optimize the wrong
-department. <code>unattributed 0</code> is printed even though it is zero, on purpose: an attribution that
-silently drops the orders it couldn't explain is one you can't audit.</p>
-<h2 id="what-it-honestly-does-not-do">What it honestly does not do</h2>
-<p>Governance metadata invites overreading, so this is worth stating plainly. Catalog metadata
-supports <strong>discovery</strong>. It is not policy enforcement, consent management, access control, or
-retention automation. An <code>owner</code> field records who is accountable; it does not stop anyone from
-querying anything. And the live resolver path — the one that calls a model over the network — is
-documented but <strong>not</strong> asserted as tested here; it needs API credentials this environment doesn't
-have, and the verification script reports that criterion as <code>SKIP</code> rather than quietly counting
-it as a pass. A piece arguing that overclaiming is the root problem cannot itself overclaim.</p>
-<h2 id="reproduce-every-number-above">Reproduce every number above</h2>
-<p>Nothing here is illustrative. The guide's prose is under test alongside the code — every figure
-is asserted against the artifacts or the warehouse, because a reproduction guide whose numbers
-have drifted spends the reader's trust before it spends their time. Five commands, no API key, no
-network:</p>
+<p>On those four orders, quality inspection ran 4.75 days over its one-day target, with no spare
+time in the schedule to absorb it.</p>
+<p>And here is the part that matters. Transportation actually ran faster than planned on 5 of the 7
+late orders. Logistics was the obvious suspect, and logistics was ahead of schedule. Without a
+baseline for each step you would get a confident, reasonable, wrong story, and you would go fix
+the wrong team. The report prints "unattributed 0" even though it is zero, on purpose: an
+attribution that quietly drops the orders it can't explain is one you can't trust.</p>
+<h2 id="what-it-does-not-do">What it does not do</h2>
+<p>It is easy to read too much into governance metadata, so to be clear: this helps people find and
+understand data. It is not access control, consent, or data retention. The owner field records
+who is accountable; it does not stop anyone from running a query. One more honest note. The live
+version that calls a model over the network is described here but not tested, because it needs
+API keys this setup doesn't have. The check script marks that case SKIP instead of pretending it
+passed.</p>
+<h2 id="try-it-yourself">Try it yourself</h2>
+<p>Nothing here is for show. The write-up is tested alongside the code, so every number in it is
+checked against the real data. A guide with stale numbers just wastes your time. Five commands,
+no API key, no network:</p>
 <pre><code class="language-bash">pip install -r requirements.txt
 python src/build_warehouse.py
-python src/ask.py --offline Q1     # 87.3%, 48/55, TRUSTED, 7/7 gates
+python src/ask.py --offline Q1     # 87.3%, 48/55, TRUSTED, 7/7 checks
 python src/ask.py --offline Q2     # the diagnostic breakdown above
 python verify_acceptance.py        # measures every acceptance criterion
 </code></pre>
-<p>The complete, tested project — sample data, all nine metadata artifacts, the pipeline, and a
-single self-contained file you can paste into a terminal — lives at
+<p>The full project, with sample data, all nine files, the pipeline, and a single file you can paste
+into a terminal, is here:
 <strong><a href="https://github.com/BeenaKhandelwal/semantic-layer-nl">github.com/BeenaKhandelwal/semantic-layer-nl</a></strong>.</p>
-<h2 id="the-one-line-version">The one-line version</h2>
-<p>Natural-language querying does not fail because models can't write SQL. It fails because the
-metadata that makes a question answerable <em>correctly</em> — grain, cardinality, exclusions, approved
-definitions, process baselines — was never written down where anything could read it. Build
-that, and the model's job shrinks to something it is genuinely good at.</p>
-<p><strong>What is your team's answer to "which of these two numbers is right?" If it's "ask Priya," you
-already have a semantic layer — it just isn't written down.</strong></p>
+<h2 id="in-one-line">In one line</h2>
+<p>Plain-English questions don't fail because models can't write SQL. They fail because the facts
+that make a question answerable correctly, like grain, cardinality, exclusions, agreed
+definitions and planned baselines, were never written down where the system could read them.
+Write them down, and the model's job shrinks to the part it is good at.</p>
+<p>So, what is your team's answer to "which of these two numbers is right?" If it's "ask Priya," you
+already have a semantic layer. It just isn't written down.</p>
 </body></html>
