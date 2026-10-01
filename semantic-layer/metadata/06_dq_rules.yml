@@ -1,0 +1,135 @@
+# Phase 6 artifact: Data quality rules bound to metric inputs.
+# Each rule measures one DQ dimension and degrades/blocks specific answers when failing.
+
+rules:
+  - rule_id: dq_completeness_delivery_date
+    dimension: completeness
+    description: >
+      Final delivery date completeness among eligible, past-due orders.
+      Scoped to exclude SO-1013 (in transit, promised after AS_OF_DATE).
+    sql: >
+      SELECT
+        100.0 * COUNT(CASE WHEN final_delivery_date IS NULL THEN 1 END)
+        / NULLIF(COUNT(*), 0) AS observed
+      FROM fact_order_delivery
+      WHERE is_eligible = TRUE
+        AND promised_delivery_date <= DATE '__AS_OF_DATE__'
+    threshold: 2.0
+    comparison: lte
+    severity: degrading
+    bound_to:
+      - on_time_delivery_pct
+    defect_demonstrated: in_transit_null
+
+  - rule_id: dq_validity_enum_values
+    dimension: validity
+    description: >
+      Order status and plant values within declared allowed sets.
+      Validates filter binding and dimension value constraints.
+    sql: >
+      SELECT
+        100.0 * COUNT(CASE
+          WHEN order_status NOT IN ('DLVD', 'IN_TRANSIT', 'CANC') THEN 1
+          WHEN plant NOT IN ('1010', '1710') THEN 1
+        END) / NULLIF(COUNT(*), 0) AS observed
+      FROM fact_order_delivery
+    threshold: 0.0
+    comparison: lte
+    severity: blocking
+    bound_to:
+      - on_time_delivery_pct
+      - mfg_schedule_adherence_pct
+      - first_pass_yield_pct
+    defect_demonstrated: cancelled_order
+
+  - rule_id: dq_uniqueness_order_grain
+    dimension: uniqueness
+    description: >
+      Exactly one fact row per order_id. Defect 4: split deliveries must be
+      collapsed to order grain. A violation here causes the 88.52% wrong answer.
+    sql: >
+      SELECT
+        COUNT(*) AS observed
+      FROM (
+        SELECT order_id, COUNT(*) AS row_count
+        FROM fact_order_delivery
+        GROUP BY order_id
+        HAVING COUNT(*) > 1
+      )
+    threshold: 0.0
+    comparison: lte
+    severity: blocking
+    bound_to:
+      - on_time_delivery_pct
+    defect_demonstrated: split_delivery
+
+  - rule_id: dq_timeliness_warehouse_freshness
+    dimension: timeliness
+    description: >
+      Hours between the newest invoice_date and AS_OF_DATE. A live mart would set this
+      to the 26-hour load SLA from design 6.1. This demo runs on a frozen snapshot whose
+      newest invoice is 72 hours before AS_OF_DATE, which no live SLA can express, so the
+      threshold is 96 -- loose enough to pass on clean data, tight enough that a stale
+      warehouse still trips it. The date itself is never written here: the SQL carries the
+      __AS_OF_DATE__ token and constants.py is the single source of the value.
+    sql: >
+      SELECT
+        EXTRACT(EPOCH FROM (CAST(DATE '__AS_OF_DATE__' AS TIMESTAMP) - CAST(MAX(invoice_date) AS TIMESTAMP))) / 3600.0 AS observed
+      FROM fact_order_delivery
+      WHERE invoice_date IS NOT NULL
+    threshold: 96.0
+    comparison: lte
+    severity: degrading
+    bound_to:
+      - on_time_delivery_pct
+      - mfg_schedule_adherence_pct
+      - first_pass_yield_pct
+    defect_demonstrated: make_to_stock_no_prod_order
+
+  - rule_id: dq_consistency_phase_ordering
+    dimension: consistency
+    description: >
+      Phase timestamp ordering: release <= gr <= goods_issue <= final_delivery.
+      Defects 7 and 8: QM-dominated and non-QM delays. Validates attribution logic.
+    sql: >
+      SELECT
+        COUNT(*) AS observed
+      FROM fact_order_delivery
+      WHERE release_date IS NOT NULL
+        AND gr_date IS NOT NULL
+        AND goods_issue_date IS NOT NULL
+        AND final_delivery_date IS NOT NULL
+        AND NOT (
+          release_date <= gr_date
+          AND gr_date <= goods_issue_date
+          AND goods_issue_date <= final_delivery_date
+        )
+    threshold: 0.0
+    comparison: lte
+    severity: blocking
+    bound_to:
+      - on_time_delivery_pct
+      - mfg_schedule_adherence_pct
+    defect_demonstrated: qm_dominated_delay non_qm_delay
+
+  - rule_id: dq_accuracy_otd_certification
+    dimension: accuracy
+    description: >
+      Recomputed IN/July OTD vs certified 87.2727%. Defect 5: repromised orders
+      measured against current promise. Absolute percentage point difference.
+    sql: >
+      SELECT
+        ABS(
+          100.0 * SUM(CASE WHEN is_on_time THEN 1 ELSE 0 END)
+          / NULLIF(SUM(CASE WHEN is_eligible THEN 1 ELSE 0 END), 0)
+          - 87.2727
+        ) AS observed
+      FROM fact_order_delivery
+      WHERE region = 'IN'
+        AND promised_delivery_date BETWEEN DATE '2026-07-01' AND DATE '2026-07-31'
+    threshold: 0.1
+    comparison: lte
+    severity: blocking
+    bound_to:
+      - on_time_delivery_pct
+    defect_demonstrated: repromised_date rework_loop

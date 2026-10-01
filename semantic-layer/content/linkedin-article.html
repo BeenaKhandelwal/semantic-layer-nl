@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Linkedin Article</title><style>
+@page { size: A4; margin: 14mm 12mm 16mm 12mm; }
+body {
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-size: 9.6pt; line-height: 1.45; color: #1a1a1a; margin: 0;
+}
+h1 { font-size: 20pt; margin: 0 0 4pt; color: #0f2942;
+     border-bottom: 2.5pt solid #0f2942; padding-bottom: 5pt; }
+h2 { font-size: 14pt; margin: 20pt 0 6pt; color: #0f2942;
+     border-bottom: 0.6pt solid #c3ccd6; padding-bottom: 3pt;
+     page-break-after: avoid; }
+h3 { font-size: 11.4pt; margin: 14pt 0 4pt; color: #1c3f5f;
+     page-break-after: avoid; }
+h4 { font-size: 10pt; margin: 11pt 0 3pt; color: #1c3f5f; }
+p { margin: 0 0 6pt; }
+ul, ol { margin: 0 0 7pt; padding-left: 17pt; }
+li { margin-bottom: 2.5pt; }
+code {
+  font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+  font-size: 8.6pt; background: #f1f4f7; padding: 0.6pt 3pt;
+  border-radius: 2pt; color: #7d2000;
+}
+pre {
+  background: #f7f9fb; border: 0.6pt solid #d6dee6; border-left: 2.5pt solid #0f2942;
+  padding: 7pt 9pt; overflow-x: auto; page-break-inside: avoid; margin: 0 0 9pt;
+}
+pre code {
+  background: none; padding: 0; color: #16324a; font-size: 8.2pt; line-height: 1.36;
+  white-space: pre-wrap; word-break: break-word;
+}
+/* Without this, an intrinsically-sized SVG prints at its own width -- the 21in wide
+   diagrams overflowed A4 and Chrome silently CLIPPED the right third of the figure,
+   which is the half that shows how the metadata gets used. Scaled-to-fit is small but
+   whole; clipped is a figure that misrepresents itself. The prose beside each one
+   points at the full-resolution file for anyone who needs to read the labels. */
+img {
+  max-width: 100%; height: auto; display: block;
+  margin: 10pt auto 4pt; page-break-inside: avoid;
+}
+table {
+  border-collapse: collapse; width: 100%; margin: 0 0 10pt;
+  font-size: 8.5pt; page-break-inside: avoid;
+}
+/* overflow-wrap, NOT word-break. `word-break: break-word` is defined as
+   `overflow-wrap: anywhere`, which lets a word break even when the column could have
+   been widened to fit it -- so Chrome's table layout sized a column to one character
+   and printed "provena / nce". `overflow-wrap: break-word` keeps the safety net for
+   identifiers genuinely too long for any column, but sizes columns from whole words. */
+th, td {
+  border: 0.5pt solid #c3ccd6; padding: 3.6pt 5pt; text-align: left;
+  vertical-align: top; overflow-wrap: break-word;
+}
+th { background: #e8edf2; font-weight: 600; color: #0f2942; }
+tr:nth-child(even) td { background: #fafbfc; }
+blockquote {
+  margin: 0 0 8pt; padding: 5pt 10pt; border-left: 2.5pt solid #7aa0c0;
+  background: #f5f8fb; color: #26445e;
+}
+hr { border: none; border-top: 0.6pt solid #d6dee6; margin: 14pt 0; }
+strong { color: #0f2942; }
+a { color: #1c5f9e; text-decoration: none; }
+</style></head><body>
+<h1 id="the-semantic-layer-is-not-the-destination-it-is-what-makes-just-ask-the-data-trustworthy">The Semantic Layer Is Not the Destination. It Is What Makes "Just Ask the Data" Trustworthy.</h1>
+<p><strong>An implementation guide, with the sample metadata each phase actually produces.</strong></p>
+<hr />
+<p>Ask a database a plain question — <em>"how many customers did we have last month?"</em> — and it
+can hand you two different answers from the same rows. One counts customers; the other
+counts orders, so anyone who bought twice is counted twice. Both queries run, both look
+reasonable, and the wrong one is always the larger — so it is the one that reaches the
+slide. Swap "customers" for any figure your business actually reports and the trap is the
+same.</p>
+<p>The same bug produced the two numbers this guide is about. Same warehouse, same afternoon,
+same question:</p>
+<blockquote>
+<p><em>"On-time delivery for India warehouses last month."</em></p>
+</blockquote>
+<p><strong>88.5%</strong> and <strong>87.3%</strong>.</p>
+<p>Same DuckDB file. Same SQL dialect. Same 132 orders. One of them is wrong, and in the
+review nobody could say which — which is the actual problem, and it is not a problem
+prompt engineering can reach.</p>
+<p>Here is where 88.5% comes from. The <code>deliveries_raw</code> table has one row per delivery <em>leg</em>.
+An order that ships in two legs — partial shipment on Tuesday, remainder on Friday — has
+two rows. Join orders to legs and count, and that order votes twice. Worse: if the first
+leg arrived before the promised date, the order looks on time twice over, while the second
+leg that actually blew the promise is one row among 61.</p>
+<p>61 legs. 55 orders.</p>
+<ul>
+<li>Order grain: <strong>48 / 55 = 87.27%</strong></li>
+<li>Delivery grain: <strong>54 / 61 = 88.52%</strong></li>
+</ul>
+<p>The gap is 1.25 points. It is small enough to look like rounding, and it always errs
+upward. A wrong number that flatters you is the one that survives to the board deck.</p>
+<p>The model did not hallucinate. It wrote syntactically valid, semantically reasonable SQL
+against a table whose grain nobody had written down anywhere it could read. <strong>The failure
+was in the metadata, so the fix has to be in the metadata.</strong></p>
+<hr />
+<h2 id="the-architectural-rule">The architectural rule</h2>
+<p>Everything below follows from one decision:</p>
+<blockquote>
+<p><strong>The model never writes SQL and never does arithmetic.</strong> It reads a governed metadata
+slice and emits a validated JSON object — which metric, which filters, which time window.
+A deterministic compiler turns that object into SQL.</p>
+</blockquote>
+<p>This is the inversion that matters. Text-to-SQL asks a language model to be right about
+grain, joins, exclusions and fiscal calendars on every single call. This architecture asks
+it to be right about <em>one</em> much easier thing: which of three approved metrics you meant.
+Everything that must be exactly right is compiled from metadata, by code, the same way
+every time.</p>
+<p>Two users asking the same question in different words get the same number, because the
+number was never in the model's hands.</p>
+<p>The pipeline is six stages:</p>
+<pre><code>retriever → resolver → validator → compiler → executor → provenance
+</code></pre>
+<p>Only the <strong>resolver</strong> calls a model. Only the <strong>compiler</strong> writes SQL. And validation
+happens <em>before</em> compilation, so a refused question never becomes SQL at all.</p>
+<p><img alt="Metadata to natural-language dataflow" src="../docs/diagrams/nl_dataflow.svg" /></p>
+<p><em>Full resolution: <a href="../docs/diagrams/nl_dataflow.svg"><code>docs/diagrams/nl_dataflow.svg</code></a> —
+scaled to fit a page here, so open it directly to read the edge labels.</em></p>
+<p>Each arrow is a stage reading a specific artifact for a specific reason. Two rows repay a
+second look: <strong>the validator and the compiler never open a file.</strong> Both receive a
+<code>SemanticModel</code> that the loader parsed, which means the compiler has no access to the
+glossary at all. Vocabulary is resolved <em>before</em> the gates, so which synonym a user typed
+can never reach the arithmetic.</p>
+<hr />
+<h2 id="eight-phases-nine-artifacts">Eight phases, nine artifacts</h2>
+<p>Each phase produces a real file and closes one specific way natural-language querying
+fails. That pairing is the whole method — a phase that doesn't close a named failure is a
+phase you can skip.</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Artifact</th>
+<th>The NL failure it closes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P0</td>
+<td><code>00_kpi_contract.md</code></td>
+<td>Nobody agrees what "on-time" means, so no answer can be wrong</td>
+</tr>
+<tr>
+<td>P1</td>
+<td><code>01_technical_metadata.json</code></td>
+<td>Column names harvested from SAP DDIC, with no business meaning</td>
+</tr>
+<tr>
+<td>P2</td>
+<td><code>02_standardized_metadata.json</code></td>
+<td>Types and keys inconsistent across source systems</td>
+</tr>
+<tr>
+<td>P3</td>
+<td><code>03_glossary.yml</code> + <code>03_column_bindings.yml</code></td>
+<td>"OTD", "delivery reliability", "promise adherence" reach no column</td>
+</tr>
+<tr>
+<td>P4</td>
+<td><code>04_process_model.yml</code></td>
+<td>The model can answer <em>what</em> happened, never <em>why</em></td>
+</tr>
+<tr>
+<td>P5</td>
+<td><code>05_semantic_model.yml</code></td>
+<td>The model invents its own arithmetic — <strong>this is where 88.5% dies</strong></td>
+</tr>
+<tr>
+<td>P6</td>
+<td><code>06_dq_rules.yml</code></td>
+<td>A number computed from incomplete inputs is returned with full confidence</td>
+</tr>
+<tr>
+<td>P7</td>
+<td><code>07_catalog_asset.json</code></td>
+<td>The answer arrives with no provenance, so nobody can defend it</td>
+</tr>
+</tbody>
+</table>
+<p>Nine files, eight phases: P3 emits two, because a glossary term and its physical binding
+are different governance objects with different owners.</p>
+<hr />
+<h2 id="where-the-metadata-comes-from-and-where-it-goes">Where the metadata comes from, and where it goes</h2>
+<p>The question that lands next — usually from whoever is being asked to fund this — is
+<em>"can't we just harvest all that from SAP?"</em></p>
+<p><img alt="Where each metadata artifact comes from, and how it is used" src="../docs/diagrams/metadata_sources.svg" /></p>
+<p><em>Full resolution:
+<a href="../docs/diagrams/metadata_sources.svg"><code>docs/diagrams/metadata_sources.svg</code></a> — every box
+carries the collection method and the accountable owner, which is worth opening for.</em></p>
+<p>Read it left to right: <strong>source → how it was collected → the artifact → when the pipeline
+consumes it.</strong> The colours are the answer to the funding question.</p>
+<p><strong>One of the nine artifacts is machine-harvestable.</strong> <code>01_technical_metadata.json</code> comes
+out of the SAP data dictionary via SE11 / SE16 — repeatable, cheap, automatable. The other
+eight split two ways:</p>
+<table>
+<thead>
+<tr>
+<th>Provenance</th>
+<th>Count</th>
+<th>What it means</th>
+<th>Artifacts</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>HARVESTED</strong></td>
+<td>1</td>
+<td>a repeatable query against a running system</td>
+<td>P1</td>
+</tr>
+<tr>
+<td><strong>DERIVED</strong></td>
+<td>4</td>
+<td>computed from earlier artifacts plus the data</td>
+<td>P2, P3 bindings, P5, P7</td>
+</tr>
+<tr>
+<td><strong>AUTHORED</strong></td>
+<td>4</td>
+<td>a named human decided something no system knows</td>
+<td>P0, P3 glossary, P4, P6</td>
+</tr>
+</tbody>
+</table>
+<p>The derived four are cheap to keep current, because their inputs are themselves versioned
+artifacts: P2 from P1 plus the raw rows plus staging SQL; the column bindings from the
+glossary checked against real warehouse columns at build time; P5 from P2's grain, P3's
+vocabulary and P4's phases; P7 from P5 + P6 plus governance fields.</p>
+<p>The authored four are where the calendar time goes. Somebody had to decide that "on-time"
+means the <em>current</em> promised date and not the original (P0), that "OTIF" and "promise
+adherence" are sanctioned synonyms for the same metric (P3), that a standard QM usage
+decision takes one day (P4), and that 2% missing delivery dates is <code>degrading</code> rather than
+<code>blocking</code> (P6). No amount of crawling produces any of those, and none of them are
+discoverable from the data — they are judgements, made by someone accountable for them.</p>
+<p>Which is the whole point, stated as a planning fact: <strong>a harvester gets you tables,
+fields, domains and types. It cannot get you grain, exclusions, an approved definition or
+a standard duration</strong> — and those are precisely the fields that decide whether the answer
+is right rather than merely well-formed. The 88.5% error lives in a field no crawler
+emits. This is why "point a catalog at the warehouse and turn on NL query" produces a demo
+and not a trustworthy system.</p>
+<h3 id="and-then-how-it-gets-used">And then how it gets used</h3>
+<p>The right-hand band is the other half of the question, and it separates three things that
+get conflated:</p>
+<ul>
+<li><strong>P0 is never read at runtime.</strong> It is the acceptance oracle — the thing the answer is
+  judged <em>against</em>, not an input to producing it. If your KPI contract is being parsed by
+  software, it has stopped being a contract.</li>
+<li><strong>P1 and P2 are consumed once, at build time</strong>, by <code>sql/02_staging_model.sql</code> and the
+  warehouse build. So the SAP data dictionary is not a live dependency of every question —
+  which is both the truth and considerably less alarming than the alternative reading.</li>
+<li><strong>P3–P7 are read on every question</strong>, by retriever, validator, compiler and provenance
+  respectively.</li>
+</ul>
+<p>That last line is the one that matters for cost and for failure modes: six artifacts sit in
+the hot path of every natural-language question, and if any of them is wrong, every answer
+is wrong the same way — silently, consistently, and with a provenance block attached that
+makes it look governed.</p>
+<p>Both figures are generated from declared graphs, not drawn. Every arrow in the sourcing
+map carries a <code>probe</code> string that must occur in the artifact it points at, and the two
+diagrams are cross-checked against each other, so neither can claim a lineage the files
+don't support.</p>
+<h3 id="the-synonym-layer-p3">The synonym layer (P3)</h3>
+<p>Vocabulary is where NL querying quietly fails, and it is the cheapest phase to build.
+From the real file, with two catalog fields dropped:</p>
+<pre><code class="language-yaml">- term: On-Time Delivery %
+  definition: &gt;
+    Share of eligible customer orders delivered on or before the promised
+    delivery date. Measured at order grain (one row per order_id). An order
+    counts as delivered only when its final delivery leg arrives. Excludes
+    cancelled orders and orders not yet due.
+  synonyms: [OTD, on time delivery, on-time delivery, delivery performance,
+             delivery reliability, promise adherence, OTIF, on time in full]
+  owner: VP Supply Chain
+  steward: Supply Chain Analytics Lead
+</code></pre>
+<p>Note that the definition states the grain <em>in prose the model reads</em>. That sentence — "one
+row per order_id" — is doing real work.</p>
+<h3 id="the-governed-metric-p5">The governed metric (P5)</h3>
+<p>This is the load-bearing artifact. Abridged from the real file:</p>
+<pre><code class="language-yaml">- name: on_time_delivery_pct
+  label: On-Time Delivery %
+  entity: fact_order_delivery
+  grain: order
+  time_dimension: promised_delivery_date
+  expression:
+    type: ratio_percent
+    numerator: sum(CASE WHEN is_on_time THEN 1 ELSE 0 END)
+    denominator: sum(CASE WHEN is_eligible THEN 1 ELSE 0 END)
+  exclusions:
+    - key: cancelled_orders
+      predicate: order_status &lt;&gt; 'CANC'
+      rationale: A cancelled order was never due; including it inflates the denominator.
+    - key: not_yet_due
+      predicate: promised_delivery_date &lt;= DATE '2026-08-07'
+      rationale: &gt;
+        An order promised after the as-of date is not late, it is pending.
+  business_rules:
+    - Measured against the CURRENT promised date, not the original.
+    - Order-grain only. Delivery-grain aggregation double-counts split shipments.
+  owner: VP Supply Chain
+  approval_state: approved
+  lineage: [SAP SD, SAP EWM, SAP TM, fact_order_delivery]
+</code></pre>
+<p>Four things to notice, because each one is a defect that would otherwise ship:</p>
+<ol>
+<li><strong><code>grain: order</code></strong> is declared, not inferred. This is the field that kills 88.5%.</li>
+<li><strong>Exclusions carry a <code>rationale</code>.</strong> Six months on, an exclusion without a stated reason
+   gets deleted by someone who assumes it was a mistake.</li>
+<li><strong><code>approval_state: approved</code></strong> is read by the retriever, so an unapproved metric is
+   never shown to the model. It cannot be asked for because it was never offered.</li>
+<li><strong>Ratios are declared as numerator and denominator</strong>, never as a pre-averaged rate. The
+   compiler sums numerators and sums denominators, then divides. Averaging percentages
+   across groups of unequal size gives a different, wrong number — and it looks fine.</li>
+</ol>
+<h3 id="the-data-quality-contract-p6">The data-quality contract (P6)</h3>
+<p>Rules bind to specific metrics, so a defect degrades only what it actually touches:</p>
+<pre><code class="language-yaml">- rule_id: dq_completeness_delivery_date
+  dimension: completeness
+  threshold: 2.0
+  comparison: lte
+  severity: degrading
+  bound_to: [on_time_delivery_pct]
+</code></pre>
+<p>A trust badge — <code>TRUSTED</code>, <code>DEGRADED</code>, <code>BLOCKED</code> — ships with every answer. <code>BLOCKED</code>
+<em>replaces</em> the number rather than annotating it, because a caveated wrong number gets
+pasted into a slide with the caveat trimmed off.</p>
+<hr />
+<h2 id="the-seven-gates">The seven gates</h2>
+<p>Between the model's JSON and any SQL, seven checks run. All seven run every time, and a
+gate that cannot be evaluated <strong>fails closed</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Gate</th>
+<th>Refuses</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>metric_approved</code></td>
+<td>a metric that isn't approved, or doesn't exist</td>
+</tr>
+<tr>
+<td><code>dimensions_declared</code></td>
+<td>grouping by something the model invented</td>
+</tr>
+<tr>
+<td><code>filters_bound</code></td>
+<td><code>region = 'MARS'</code> — a value outside the declared allowed set</td>
+</tr>
+<tr>
+<td><code>grain_matches</code></td>
+<td><strong>the 88.5% query. It never becomes SQL.</strong></td>
+</tr>
+<tr>
+<td><code>no_fanout</code></td>
+<td>a dimension only reachable through a one-to-many join</td>
+</tr>
+<tr>
+<td><code>time_window_bounded</code></td>
+<td>an unbounded or inverted date range</td>
+</tr>
+<tr>
+<td><code>exclusions_applied</code></td>
+<td>a metric whose certified exclusions can't be applied</td>
+</tr>
+</tbody>
+</table>
+<p>A refusal names the gate and the reason. This is the actual output when the 88.5% query
+is put through the pipeline:</p>
+<pre><code>REFUSED  on_time_delivery_pct: the intent did not pass validation.
+
+  gates failed  grain_matches
+  grain_matches        Metric 'on_time_delivery_pct' is certified at grain 'order'; the
+                       intent asks for grain 'delivery'. Aggregating at the wrong grain
+                       changes the number.
+
+  No number is shown. A value that failed a gate is not a caveated answer,
+  it is an unverified one.
+</code></pre>
+<p>That is more useful than a number. "I can't answer that, and here is which rule stopped
+me" is a system you can put in front of a CFO. One that always produces a number is not.</p>
+<p>Note <code>filters_bound</code> in particular. Without a declared allowed-value set, a filter on a
+misspelled region returns zero rows — and zero rows gets presented as an answer.</p>
+<hr />
+<h2 id="the-question-bi-tools-cant-take">The question BI tools can't take</h2>
+<p>Descriptive questions ("what was it?") only need a glossary, a grain and a metric. The
+question people actually ask is diagnostic:</p>
+<blockquote>
+<p><em>"Why did on-time delivery drop for India warehouses last month?"</em></p>
+</blockquote>
+<p>That requires per-phase timestamps, per-phase planned baselines, and an attribution rule
+<strong>defined once, in metadata</strong>. This is why the manufacturing process is in scope: the
+answer to "why" lives upstream in production, not in the delivery table.</p>
+<p>The process model declares twelve phases across SAP SD, PP, QM, MM/EWM, LE and TM — demand
+capture, MRP, production order release, material staging, production execution, quality
+inspection, goods receipt, picking, dispatch, transportation, delivery confirmation,
+billing. Nine of them are attributable spans. The other three aren't, and declaring them
+would let a filter pass every gate and return zero rows dressed as an answer.</p>
+<p>For each order and phase: <code>variance_days = actual_duration − standard_duration</code>. The
+attribution is one <code>argmax</code> over the nine spans, ties broken to the earliest phase,
+evaluated only for orders that actually missed.</p>
+<p>The real output, with the answer block's metadata lines elided:</p>
+<pre><code>ANSWER   On-Time Delivery % is 87.3% -- 48 of 55 eligible orders delivered on or
+         before the promised date
+
+  ...   (metric, arithmetic, grain, window, filters, exclusions, lineage, trust, gates)
+
+  BREAKDOWN
+    Quality inspection           4
+    Transportation               2
+    Production execution         1
+    unattributed                 0
+
+  Largest contributor: Quality inspection (4 of 7 late orders).
+
+  COMPARISON
+    prior window               June 2026 (2026-06-01 to 2026-06-30) on promised_delivery_date
+    prior value                96.2% (25 / 26)
+    change                     down 8.9pp (96.2% -&gt; 87.3%)
+</code></pre>
+<p><code>unattributed 0</code> is printed even though it is zero, on purpose: an attribution that
+silently drops the orders it could not explain is an attribution you cannot audit.</p>
+<p>On those 4 orders, the QM usage decision ran an average of <strong>4.75 days over its 1.0-day
+standard, against 0.0 days of available slack</strong> — the promise date left no room to absorb
+it. Plant 1010.</p>
+<p>And the part that makes the case: <strong>transportation ran <em>under</em> standard on 5 of the 7 late
+orders.</strong> Logistics was the obvious suspect and logistics was faster than planned. Without
+per-phase baselines you get a plausible, confident, wrong story — and you go optimize the
+wrong department.</p>
+<hr />
+<h2 id="what-this-does-not-do">What this does <em>not</em> do</h2>
+<p>Worth stating plainly, because governance metadata invites overreading.</p>
+<p>Catalog metadata supports <strong>discovery</strong>. It is not policy enforcement, consent management,
+access control, or retention automation. An <code>owner</code> field records who is accountable; it
+does not stop anyone from querying anything. Those are separate systems, and a semantic
+layer that implies otherwise is worse than one that stays silent.</p>
+<p>Also honestly scoped: one fact table with declared joins, not a general warehouse; a
+frozen as-of date so the numbers are reproducible; a single-node engine. And the live
+resolver path is documented but <strong>not</strong> asserted as tested here — it needs API credentials
+this environment doesn't have, and the verification script reports that criterion as
+<code>SKIP</code> rather than quietly counting it as a pass.</p>
+<hr />
+<h2 id="reproducing-it">Reproducing it</h2>
+<p>Everything above is measured, not illustrative. Five commands, no API key, no network:</p>
+<pre><code class="language-bash">pip install -r requirements.txt
+python src/build_warehouse.py
+python src/ask.py --offline Q1     # 87.3%, 48/55, TRUSTED, 7/7 gates
+python src/ask.py --offline Q2     # the diagnostic breakdown above
+python verify_acceptance.py        # measures every acceptance criterion
+</code></pre>
+<p>401 tests hold it in place, and the guide's prose is under test alongside the code — every
+figure in it is asserted against the artifacts or the warehouse, because a reproduction
+guide whose numbers have drifted spends the reader's trust before it spends their time.</p>
+<p>If you would rather not clone anything: the companion <strong>Medium post</strong> carries the whole
+thing as a single self-contained file — embedded data, inline metadata, all seven gates,
+the compiler and the diagnostic — that runs on <code>pip install duckdb pyyaml</code> and reproduces
+every number above. It is the same file this repository tests, byte for byte.</p>
+<hr />
+<h2 id="the-one-line-version">The one-line version</h2>
+<p>Natural-language querying does not fail because models can't write SQL. It fails because
+the metadata that makes a question answerable <em>correctly</em> — grain, cardinality, exclusions,
+approved definitions, process baselines — was never written down where anything could read
+it.</p>
+<p>Build that, and the model's job shrinks to something it is genuinely good at.</p>
+<p><strong>What is your team's answer to "which of these two numbers is right"? If it's "ask
+Priya," you have a semantic layer — it just isn't written down.</strong></p>
+</body></html>

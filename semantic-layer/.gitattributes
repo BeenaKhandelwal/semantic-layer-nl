@@ -1,0 +1,26 @@
+# LF everywhere: this project asserts byte-identical output and hashes metadata
+# files for provenance. core.autocrlf=true on Windows would otherwise flip these
+# to CRLF on checkout and change both the CSV bytes and the metadata hashes.
+*.csv  text eol=lf
+*.py   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.sql  text eol=lf
+*.md   text eol=lf
+*.json text eol=lf
+
+# Build-scaffolding review diffs: `git apply` rejects a patch whose line endings
+# no longer match the blobs it was generated against.
+*.diff text eol=lf
+
+# The renderers write SVG with newline="\n" and --check compares the committed file
+# byte-for-byte. That check currently survives a CRLF checkout only because
+# Path.read_text normalises newlines on the way in -- i.e. by accident, not by
+# design. nl_dataflow.svg was already sitting in the working tree as CRLF.
+*.svg  text eol=lf
+*.html text eol=lf
+
+# Binary, and stated so rather than left to git's heuristic. A PNG or PDF that gets
+# newline-translated is a corrupt file, and the diagrams are committed output.
+*.png  binary
+*.pdf  binary

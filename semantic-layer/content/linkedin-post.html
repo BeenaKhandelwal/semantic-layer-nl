@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Linkedin Post</title><style>
+@page { size: A4; margin: 14mm 12mm 16mm 12mm; }
+body {
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-size: 9.6pt; line-height: 1.45; color: #1a1a1a; margin: 0;
+}
+h1 { font-size: 20pt; margin: 0 0 4pt; color: #0f2942;
+     border-bottom: 2.5pt solid #0f2942; padding-bottom: 5pt; }
+h2 { font-size: 14pt; margin: 20pt 0 6pt; color: #0f2942;
+     border-bottom: 0.6pt solid #c3ccd6; padding-bottom: 3pt;
+     page-break-after: avoid; }
+h3 { font-size: 11.4pt; margin: 14pt 0 4pt; color: #1c3f5f;
+     page-break-after: avoid; }
+h4 { font-size: 10pt; margin: 11pt 0 3pt; color: #1c3f5f; }
+p { margin: 0 0 6pt; }
+ul, ol { margin: 0 0 7pt; padding-left: 17pt; }
+li { margin-bottom: 2.5pt; }
+code {
+  font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+  font-size: 8.6pt; background: #f1f4f7; padding: 0.6pt 3pt;
+  border-radius: 2pt; color: #7d2000;
+}
+pre {
+  background: #f7f9fb; border: 0.6pt solid #d6dee6; border-left: 2.5pt solid #0f2942;
+  padding: 7pt 9pt; overflow-x: auto; page-break-inside: avoid; margin: 0 0 9pt;
+}
+pre code {
+  background: none; padding: 0; color: #16324a; font-size: 8.2pt; line-height: 1.36;
+  white-space: pre-wrap; word-break: break-word;
+}
+/* Without this, an intrinsically-sized SVG prints at its own width -- the 21in wide
+   diagrams overflowed A4 and Chrome silently CLIPPED the right third of the figure,
+   which is the half that shows how the metadata gets used. Scaled-to-fit is small but
+   whole; clipped is a figure that misrepresents itself. The prose beside each one
+   points at the full-resolution file for anyone who needs to read the labels. */
+img {
+  max-width: 100%; height: auto; display: block;
+  margin: 10pt auto 4pt; page-break-inside: avoid;
+}
+table {
+  border-collapse: collapse; width: 100%; margin: 0 0 10pt;
+  font-size: 8.5pt; page-break-inside: avoid;
+}
+/* overflow-wrap, NOT word-break. `word-break: break-word` is defined as
+   `overflow-wrap: anywhere`, which lets a word break even when the column could have
+   been widened to fit it -- so Chrome's table layout sized a column to one character
+   and printed "provena / nce". `overflow-wrap: break-word` keeps the safety net for
+   identifiers genuinely too long for any column, but sizes columns from whole words. */
+th, td {
+  border: 0.5pt solid #c3ccd6; padding: 3.6pt 5pt; text-align: left;
+  vertical-align: top; overflow-wrap: break-word;
+}
+th { background: #e8edf2; font-weight: 600; color: #0f2942; }
+tr:nth-child(even) td { background: #fafbfc; }
+blockquote {
+  margin: 0 0 8pt; padding: 5pt 10pt; border-left: 2.5pt solid #7aa0c0;
+  background: #f5f8fb; color: #26445e;
+}
+hr { border: none; border-top: 0.6pt solid #d6dee6; margin: 14pt 0; }
+strong { color: #0f2942; }
+a { color: #1c5f9e; text-decoration: none; }
+</style></head><body>
+<h1 id="linkedin-post">LinkedIn post</h1>
+<p><em>Part 1 of three: this short post, the long-form LinkedIn article
+(<code>content/linkedin-article.md</code>), and the Medium post carrying the complete executable code
+(<code>content/medium-post.md</code>). ~300 words, one image (the one-order-two-boxes figure at
+<code>docs/diagrams/grain_two_ways.png</code>; see the note below on the alternatives).</em></p>
+<hr />
+<p>Two reports land on your desk. One says you signed up <strong>1,200 customers</strong> last month. The
+other says <strong>1,000</strong>. Same database, same afternoon — and one of them is just wrong.
+Nobody in the room can tell you which.</p>
+<p>The wrong one counted <em>orders</em> instead of <em>customers</em>: anyone who bought twice got counted
+twice. It is an honest mistake, the number looks completely reasonable, and it always errs
+<em>upward</em> — which is exactly why it is the one that ends up on the board slide. Nobody
+re-checks a number that flatters them.</p>
+<p>Now swap "customers" for any figure your business actually reports. Ours was <strong>on-time
+delivery</strong>, and the same bug gave us two answers — <strong>88.5%</strong> or <strong>87.3%</strong>. Some orders
+arrived in two boxes, so counting <em>shipments</em> instead of <em>orders</em> counted those orders
+twice: 55 orders came in 61 boxes.</p>
+<p>Now that a question like this gets asked in plain English and an AI hands back the answer,
+the instinct is to fix it with better prompting — and prompting fixes nothing. The model
+didn't misunderstand the question; it answered a perfectly reasonable one against a table
+where nobody had written down what a single row is supposed to mean.</p>
+<p>So I built the fix, and wrote up every step. The model's only job is to pick an approved
+metric and fill in a small, checkable form: which metric, which filters, which dates. It
+never writes SQL and never does the arithmetic — a deterministic compiler does that, from
+governed metadata. Seven checks run before any SQL exists, and one refuses the
+double-counted question outright instead of answering it.</p>
+<p>The real payoff is the question a dashboard can't take: <em>why did it drop?</em> On-time delivery
+fell <strong>8.9pp</strong> — and the obvious suspect was innocent. Transportation actually ran ahead of
+plan; the delay was quality inspection, <strong>4.75</strong> days over a one-day standard, with no
+slack to absorb it.</p>
+<p>Full write-up, sample data, and a single file you can paste into a terminal and run — two
+dependencies, no API key — in the comments.</p>
+<p>What's your team's real answer to <em>"which of these two numbers is right?"</em> If it's "ask
+Priya," you already have a semantic layer. It just isn't written down.</p>
+<hr />
+<h2 id="notes-for-posting">Notes for posting</h2>
+<ul>
+<li><strong>Image:</strong> <code>docs/diagrams/grain_two_ways.png</code> (2600×1677) — one order shipped in two
+  boxes, counted two ways to two different numbers. It states the whole problem without
+  assuming any vocabulary, which is the same job the opening now does in words, and it is
+  the frame that survives the feed. The pipeline swimlane <code>docs/diagrams/nl_dataflow.png</code>
+  (2730×1872) is the alternative if you would rather lead with the fix than the failure; it
+  carries the argument on its own for a reader who only looks at the picture.</li>
+<li><strong>Second figure — <code>docs/diagrams/metadata_sources.png</code></strong> (2730×1872): where each of the
+  nine artifacts comes from and when it is consumed. Lead with this one instead if the
+  audience is the people who <em>fund</em> metadata work rather than the people who query it —
+  "only 1 of 9 artifacts is machine-harvestable" is the line that changes a budget
+  conversation, and it is the honest counter to "can't we just point a catalog at it?".
+  Do not post both as a carousel on the first post; a single figure gets read, two get
+  skimmed. Better as the follow-up post a few days later, which also gives the first one
+  a reason to resurface.</li>
+<li><strong>First comment:</strong> the repo link plus <code>python src/ask.py --offline Q1</code>. LinkedIn
+  suppresses reach on posts with outbound links in the body, which is why the link sits in
+  a comment.</li>
+<li><strong>Sequencing the three parts.</strong> Post this first; publish the LinkedIn article a day or
+  two later and link it from the comments of this one; publish the Medium post
+  (<code>content/medium-post.md</code>, the complete runnable file) last and link it from the
+  article's closing section. Reversed, the short post has nothing left to promise. Do not
+  ship all three the same day — they compete for the same readers, and the article is the
+  one that needs the runway.</li>
+<li><strong>No hashtag block.</strong> Three at most if you want them: #DataEngineering #SemanticLayer
+  #DataGovernance.</li>
+<li>The closing question is real, not rhetorical bait — most teams genuinely do not have a
+  documented answer, and the replies are the useful part of posting this.</li>
+</ul>
+</body></html>

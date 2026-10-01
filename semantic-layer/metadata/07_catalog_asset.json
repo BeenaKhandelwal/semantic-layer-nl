@@ -1,0 +1,92 @@
+{
+  "asset_id": "semantic.metric.on_time_delivery_pct",
+  "asset_type": "certified_metric",
+  "name": "On-Time Delivery %",
+  "technical_name": "on_time_delivery_pct",
+  "description": "Share of eligible customer orders delivered on or before the promised delivery date. An order counts as delivered only when its final leg arrives.",
+  "definition_sql": "100.0 * sum(CASE WHEN is_on_time THEN 1 ELSE 0 END) / sum(CASE WHEN is_eligible THEN 1 ELSE 0 END)",
+  "grain": "order",
+  "time_dimension": "promised_delivery_date",
+  "unit": "percent",
+  "primary_asset": "fact_order_delivery",
+
+  "owner": "VP Supply Chain",
+  "steward": "Supply Chain Data Steward",
+  "certification_state": "certified",
+  "certified_on": "__AS_OF_DATE__",
+  "review_cadence": "quarterly",
+
+  "data_subject_category": "business_customer_contact",
+  "personal_data_category": "limited_personal_data",
+  "personal_data_fields": [
+    {
+      "column": "customer_id",
+      "classification": "pseudonymous_identifier",
+      "note": "Party key, not a name. Resolves to a legal entity in SAP KNA1; for named-individual sole proprietors it is personal data under DPDP."
+    },
+    {
+      "column": "ship_to_city",
+      "classification": "location_coarse",
+      "note": "City-level only. No street address is carried into the mart."
+    }
+  ],
+  "processing_purpose": "Supply chain performance measurement and delivery-commitment management",
+  "legal_basis": "legitimate_interest_contract_performance",
+  "access_group": "supply-chain-analysts",
+  "retention_period": "P7Y",
+  "retention_basis": "Statutory commercial record-keeping period; delivery performance is contract-performance evidence.",
+  "masking_policy": "customer_id pseudonymised at ingestion; ship_to_city truncated to city; no masking applied to aggregate metric output",
+  "cross_border_transfer": "none_declared",
+
+  "lineage": [
+    "SAP SD (VBAK/VBAP) — sales order created",
+    "SAP PP (PLAF/AFKO/AFRU) — planned order, production order, confirmation",
+    "SAP QM (QALS) — inspection lot and usage decision",
+    "SAP MM/EWM (MSEG/MKPF) — goods issue to production, goods receipt to stock, picking",
+    "SAP TM/LE-SHP (LIKP/VTTK) — actual goods issue, shipment, proof of delivery",
+    "data lake — raw extract landing (data/*.csv)",
+    "sql/02_staging_model.sql — staging views, canonical names and types",
+    "fact_order_delivery — order-grain mart, delivery legs collapsed",
+    "metadata/05_semantic_model.yml — governed metric definition",
+    "semantic layer — validated intent compiled to SQL",
+    "consumer — NL answer, BI dashboard"
+  ],
+
+  "upstream_systems": ["SAP SD", "SAP PP", "SAP QM", "SAP MM", "SAP EWM", "SAP TM"],
+  "related_metrics": [
+    "first_pass_yield_pct",
+    "mfg_schedule_adherence_pct",
+    "production_cycle_time_days (contracted, deferred)"
+  ],
+  "related_assets": [
+    "fact_order_delivery",
+    "fact_production_order",
+    "dim_process_phase"
+  ],
+
+  "quality_contract": {
+    "rules_artifact": "metadata/06_dq_rules.yml",
+    "blocking_rules": [
+      "dq_validity_enum_values",
+      "dq_uniqueness_order_grain",
+      "dq_consistency_phase_ordering",
+      "dq_accuracy_otd_certification"
+    ],
+    "degrading_rules": [
+      "dq_completeness_delivery_date",
+      "dq_timeliness_warehouse_freshness"
+    ],
+    "badge_semantics": "TRUSTED = all rules pass. DEGRADED = a degrading rule fails; the number is served with the failing rule named. BLOCKED = a blocking rule fails; a refusal is returned instead of a number."
+  },
+
+  "known_limitations": [
+    "Measured against the CURRENT promised date, not the original. Re-promised orders (SO-1011) are judged on the commitment in force at delivery, which flatters performance where re-promising is routine.",
+    "Order grain only. Delivery-grain aggregation returns 88.52% instead of 87.27% on this dataset by double-counting split shipments.",
+    "Make-to-stock orders (SO-1015) have no production order, so manufacturing phase attribution is legitimately absent for them rather than zero.",
+    "A single order-grain fact table. Multi-fact conformed-dimension queries are out of scope for this reference implementation."
+  ],
+
+  "governance_note": "These fields make personal data discoverable and support India DPDP readiness work — data-subject categories, processing purpose, legal basis, retention, and declared masking. This catalog entry DOES NOT ENFORCE any of them. It is not a substitute for enforcement: access control, consent management, retention automation, and masking all live in the platform layer, and a field declared here is a statement of intent until a control implements it. Treat a populated governance block as a discovery aid and an audit trail of decisions, never as evidence that a control is operating.",
+
+  "as_of_note": "certified_on carries the __AS_OF_DATE__ token rather than a literal date. src/semantic/constants.py is the single home of the as-of date; substituting it at read time is what stops this artifact from silently expiring."
+}

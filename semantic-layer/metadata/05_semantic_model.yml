@@ -1,0 +1,234 @@
+# Phase 5 artifact: the governed semantic model.
+# Tool-neutral. Portable to dbt MetricFlow, Cube, Unity Catalog, SAP Datasphere.
+# This file is the single definition of every metric. BI and NL querying both read it,
+# so the number cannot drift between a dashboard and a chat answer.
+
+entities:
+  - name: fact_order_delivery
+    label: Order Delivery Fact
+    grain: order
+    primary_key: order_id
+    table: fact_order_delivery
+    materialized: true
+    description: One row per customer sales order, all delivery legs collapsed.
+    joins:
+      - to: fact_production_order
+        cardinality: many_to_one
+        join_key: production_order_id
+        note: >
+          Orders may have no production order (make-to-stock, e.g. SO-1015).
+          LEFT JOIN required; an INNER JOIN silently drops eligible orders
+          and inflates OTD.
+      - to: raw_deliveries
+        cardinality: one_to_many
+        join_key: order_id
+        note: >
+          FAN-OUT HAZARD. 6 orders ship in two legs. Joining here without
+          re-aggregating to order grain yields 88.52% instead of 87.27%.
+          Never join this path for an order-grain metric.
+
+  - name: fact_production_order
+    label: Production Order Fact
+    grain: production_order
+    primary_key: production_order_id
+    table: fact_production_order
+    materialized: true
+    description: One row per production order. Make-to-stock orders have none.
+    joins:
+      - to: fact_order_delivery
+        cardinality: many_to_one
+        join_key: order_id
+        note: >
+          REQUIRED, not optional. fact_production_order carries NO region and NO
+          promised_delivery_date column, so both production metrics are unfilterable
+          and unwindowable without this join. Verified non-fan-out against the built
+          warehouse: 131 production orders over 131 distinct order_ids, zero orders
+          with more than one production order. many_to_one, so the no_fanout gate
+          must PERMIT it -- it is the counter-example to raw_deliveries.
+
+  - name: raw_deliveries
+    label: Raw Delivery Legs
+    grain: delivery
+    primary_key: delivery_id
+    table: null
+    materialized: false
+    description: >
+      One row per delivery leg. Split shipments create multiple rows per order.
+      NOT MATERIALIZED: there is no `raw_deliveries` table or view in the warehouse
+      (the nearest object is the `stg_deliveries` view over deliveries_raw.csv). This
+      entity exists so the fan-out hazard is declarable and so the no_fanout gate has a
+      one_to_many edge to reject. `materialized: false` is what stops the compiler from
+      emitting `FROM raw_deliveries` for a query the validator would have refused
+      anyway -- an unresolvable table name is a catalog error, and it should surface as
+      a named CompilerError rather than as a DuckDB "table does not exist".
+
+dimensions:
+  - name: region
+    label: Region
+    column: region
+    entity: fact_order_delivery
+    data_type: string
+    allowed_values: ["IN", "US", "EU", "APAC"]
+    description: Geographic region for sales and fulfillment.
+
+  - name: plant
+    label: Plant
+    column: plant
+    entity: fact_order_delivery
+    data_type: string
+    allowed_values: ["1010", "1710"]
+    description: Manufacturing plant code.
+
+  - name: warehouse
+    label: Warehouse
+    column: warehouse
+    entity: fact_order_delivery
+    data_type: string
+    description: Distribution warehouse code.
+
+  - name: carrier
+    label: Carrier
+    column: carrier
+    entity: fact_order_delivery
+    data_type: string
+    allowed_values: ["BLUEDART", "FEDEX", "DHL"]
+    description: Logistics carrier.
+
+  - name: delay_attribution_phase
+    label: Delay Attribution Phase
+    column: delay_attribution_phase
+    entity: fact_order_delivery
+    data_type: string
+    allowed_values:
+      - quality_inspection
+      - transportation
+      - production_execution
+      - material_staging
+      - picking_packing
+      - mrp_planning
+      - production_release
+      - goods_receipt
+      - goods_issue
+    description: >
+      Phase with the largest positive variance for late orders. Exactly the 9 variance
+      spans (phase_seq 2-10): demand_capture is the chain's start point rather than a
+      span and delivery_confirmation is a 0-day event folded into var_shipment, so
+      neither is emittable -- declaring either would let the filters_bound gate admit a
+      query that returns zero rows and present it as an answer.
+
+  - name: order_status
+    label: Order Status
+    column: order_status
+    entity: fact_order_delivery
+    data_type: string
+    allowed_values: ["DLVD", "CANC", "IN_TRANSIT"]
+    description: Current status of the sales order.
+
+  - name: promised_delivery_date
+    label: Promised Delivery Date
+    column: promised_delivery_date
+    entity: fact_order_delivery
+    data_type: date
+    description: Date promised to customer for order delivery. Time dimension for windowing.
+
+  - name: delivery_id
+    label: Delivery ID
+    column: delivery_id
+    entity: raw_deliveries
+    reachable_via: raw_deliveries
+    queryable_at_grain: delivery
+    data_type: string
+    description: Delivery leg identifier. Exists to test no_fanout gate rejection of one_to_many joins.
+
+metrics:
+  - name: on_time_delivery_pct
+    label: On-Time Delivery %
+    description: >
+      Share of eligible customer orders delivered on or before the promised
+      delivery date. An order counts as delivered only when its final leg
+      arrives.
+    entity: fact_order_delivery
+    grain: order
+    time_dimension: promised_delivery_date
+    expression:
+      type: ratio_percent
+      numerator: "sum(CASE WHEN is_on_time THEN 1 ELSE 0 END)"
+      denominator: "sum(CASE WHEN is_eligible THEN 1 ELSE 0 END)"
+    exclusions:
+      - key: cancelled_orders
+        predicate: "order_status <> 'CANC'"
+        rationale: A cancelled order was never due; including it inflates the denominator.
+      - key: not_yet_due
+        predicate: "promised_delivery_date <= DATE '__AS_OF_DATE__'"
+        rationale: >
+          An order promised after the as-of date is not late, it is pending.
+          Counting it as a miss understates performance.
+    business_rules:
+      - Measured against the CURRENT promised date, not the original. Re-promised
+        orders (SO-1011) are judged on the commitment in force at delivery.
+      - Order-grain only. Delivery-grain aggregation double-counts split shipments.
+    owner: VP Supply Chain
+    steward: Supply Chain Data Steward
+    approval_state: approved
+    lineage: ["SAP SD", "SAP EWM", "SAP TM", "fact_order_delivery"]
+
+  - name: first_pass_yield_pct
+    label: First Pass Yield %
+    description: >
+      Share of production orders where the first quality inspection resulted in
+      acceptance, without rework. Excludes rework re-inspections to prevent
+      double-counting.
+    entity: fact_production_order
+    grain: production_order
+    time_dimension: promised_delivery_date
+    expression:
+      type: ratio_percent
+      numerator: "sum(CASE WHEN first_usage_decision = 'ACCEPT' THEN 1 ELSE 0 END)"
+      denominator: "count(*)"
+    exclusions:
+      - key: cancelled_production_orders
+        predicate: "status <> 'CANC'"
+        rationale: Cancelled production orders were never completed; including them inflates the denominator.
+      - key: rework_reinspections
+        predicate: "decision_count >= 1"
+        rationale: >
+          The first_usage_decision column already collapses multiple inspection decisions
+          to the FIRST one only (decision_seq = 1). Rework lots (e.g. QL-4004) have
+          decision_count = 2 but first_usage_decision = 'REWORK'. This exclusion documents
+          that we read the first decision, not the final one (qm_final_decision_date),
+          which prevents the 94.55% error where eventually-accepted rework is counted as
+          first-pass success. The predicate decision_count >= 1 ensures the row is a
+          production order with at least one inspection, giving the exclusions_applied
+          gate something to record.
+    business_rules:
+      - Measures first-pass acceptance rate. Rework re-inspections are excluded.
+      - Windows on promised_delivery_date via join to fact_order_delivery, not scheduled_finish_date.
+    owner: VP Manufacturing
+    steward: Manufacturing Data Steward
+    approval_state: approved
+    lineage: ["SAP PP", "SAP QM", "fact_production_order", "fact_order_delivery"]
+
+  - name: mfg_schedule_adherence_pct
+    label: Manufacturing Schedule Adherence %
+    description: >
+      Share of production orders that were confirmed on or before the scheduled
+      finish date. Measures manufacturing execution discipline.
+    entity: fact_production_order
+    grain: production_order
+    time_dimension: promised_delivery_date
+    expression:
+      type: ratio_percent
+      numerator: "sum(CASE WHEN is_on_schedule THEN 1 ELSE 0 END)"
+      denominator: "count(*)"
+    exclusions:
+      - key: cancelled_production_orders
+        predicate: "status <> 'CANC'"
+        rationale: Cancelled production orders were never completed; including them inflates the denominator.
+    business_rules:
+      - Measures adherence to scheduled_finish_date for production confirmation.
+      - Windows on promised_delivery_date via join to fact_order_delivery, not scheduled_finish_date.
+      - Using scheduled_finish_date for windowing yields 42/45, which is the wrong cohort.
+    owner: VP Manufacturing
+    steward: Manufacturing Data Steward
+    approval_state: approved
+    lineage: ["SAP PP", "fact_production_order", "fact_order_delivery"]

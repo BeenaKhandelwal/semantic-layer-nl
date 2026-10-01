@@ -1,0 +1,332 @@
+# Phase 3 artifact: Business glossary with synonyms for natural language resolution
+#
+# This glossary maps business terminology to technical metadata. The synonyms
+# list is load-bearing: it is what enables NL queries like "OTD for India last
+# month" to resolve to the correct metric and filters. Without comprehensive
+# synonyms, the resolver cannot map user vocabulary to governed definitions.
+
+terms:
+  - term: On-Time Delivery %
+    definition: >
+      Share of eligible customer orders delivered on or before the promised
+      delivery date. Measured at order grain (one row per order_id). An order
+      counts as delivered only when its final delivery leg arrives. Excludes
+      cancelled orders and orders not yet due.
+    synonyms:
+      - OTD
+      - on time delivery
+      - on-time delivery
+      - delivery performance
+      - delivery reliability
+      - promise adherence
+      - OTIF
+      - on time in full
+    owner: VP Supply Chain
+    steward: Supply Chain Analytics Lead
+    data_type: percentage
+    calculation: (delivered_on_time / eligible_orders) * 100
+
+  - term: Manufacturing Schedule Adherence %
+    definition: >
+      Share of production orders confirmed on or before the scheduled finish
+      date. Measures manufacturing execution discipline against the planned
+      schedule.
+    synonyms:
+      - schedule adherence
+      - schedule compliance
+      - schedule performance
+      - production adherence
+      - manufacturing adherence
+      - on-schedule production
+    owner: VP Manufacturing
+    steward: Production Planning Lead
+    data_type: percentage
+    calculation: (confirmed_on_schedule / released_orders) * 100
+
+  - term: First Pass Yield %
+    definition: >
+      Share of production orders accepted at the first quality inspection
+      decision. Measures quality right-first-time. Excludes rework re-inspections
+      (decision_seq > 1) to prevent double-counting.
+    synonyms:
+      - FPY
+      - first pass yield
+      - first time right
+      - FTR
+      - quality yield
+      - right first time
+      - initial quality
+    owner: VP Quality
+    steward: Quality Analytics Lead
+    data_type: percentage
+    calculation: (first_decision_accepted / total_first_inspections) * 100
+
+  - term: Sales Order
+    definition: >
+      Customer order entered in SAP SD. Uniquely identified by order_id.
+      The primary business object for order-to-cash processes.
+    synonyms:
+      - order
+      - customer order
+      - SO
+      - sales order
+      - sales doc
+    owner: VP Sales
+    steward: Sales Operations Lead
+    primary_key: order_id
+    source_system: SAP SD
+    sap_table: VBAK
+
+  - term: Production Order
+    definition: >
+      Manufacturing order released in SAP PP. Links a sales order to
+      production execution. Not all sales orders have production orders
+      (e.g. make-to-stock items like SO-1015).
+    synonyms:
+      - prod order
+      - manufacturing order
+      - work order
+      - production work order
+    owner: VP Manufacturing
+    steward: Production Planning Lead
+    primary_key: production_order_id
+    source_system: SAP PP
+    sap_table: AFKO
+
+  - term: Inspection Lot
+    definition: >
+      Quality inspection batch in SAP QM. Records usage decisions (accept,
+      reject, rework). Reworked lots have multiple decisions; first-pass
+      yield measures decision_seq = 1 only.
+    synonyms:
+      - inspection lot
+      - QM lot
+      - quality lot
+      - inspection batch
+    owner: VP Quality
+    steward: Quality Analytics Lead
+    primary_key: inspection_lot_id
+    source_system: SAP QM
+    sap_table: QALS
+
+  - term: Region
+    definition: >
+      Geographic region where the order is fulfilled. Maps to country or
+      country group for reporting purposes.
+    synonyms:
+      - country
+      - geography
+      - region
+      - market
+    owner: VP Global Operations
+    steward: Master Data Team
+    data_type: categorical
+    allowed_values:
+      - IN
+      - US
+      - DE
+      - CN
+      - BR
+    value_labels:
+      IN: India
+      US: United States
+      DE: Germany
+      CN: China
+      BR: Brazil
+
+  - term: Plant
+    definition: >
+      Manufacturing plant or distribution center. SAP organizational unit
+      where production or fulfillment occurs.
+    synonyms:
+      - plant
+      - facility
+      - manufacturing plant
+      - production facility
+      - site
+    owner: VP Global Operations
+    steward: Master Data Team
+    data_type: categorical
+    allowed_values:
+      - "1010"
+      - "1710"
+      - "2020"
+      - "3030"
+    value_labels:
+      # Quoted: the warehouse column is VARCHAR and 05_semantic_model.yml declares
+      # allowed_values as strings. Unquoted, YAML makes these int keys, so a lookup
+      # of value_labels['1010'] misses and the label silently comes back empty.
+      "1010": India Plant
+      "1710": US Plant
+      "2020": Germany Plant
+      "3030": China Plant
+
+  - term: Warehouse
+    definition: >
+      Finished goods warehouse or distribution center. May be co-located
+      with a plant or operate independently.
+    synonyms:
+      - warehouse
+      - WH
+      - distribution center
+      - DC
+      - fulfillment center
+      - depot
+    owner: VP Logistics
+    steward: Warehouse Operations Lead
+    data_type: categorical
+    primary_key: warehouse
+
+  - term: Carrier
+    definition: >
+      Transportation carrier responsible for final-mile delivery to customer.
+    synonyms:
+      - carrier
+      - shipper
+      - logistics provider
+      - freight carrier
+      - courier
+      - transporter
+    owner: VP Logistics
+    steward: Transportation Planning Lead
+    data_type: categorical
+    allowed_values:
+      - BLUEDART
+      - FEDEX
+      - DHL
+      - UPS
+      - MAERSK
+
+  - term: Promised Delivery Date
+    definition: >
+      Date the customer was promised delivery. Used as the baseline for
+      on-time delivery measurement. If an order is re-promised, the current
+      (latest) promise is used, not the original.
+    synonyms:
+      - promise date
+      - committed delivery date
+      - delivery promise
+      - due date
+      - requested delivery date
+      - RDD
+    owner: VP Sales
+    steward: Order Management Lead
+    data_type: date
+    sap_field: VBEP-EDATU
+
+  - term: Delivery Date
+    definition: >
+      Actual date the order was delivered to the customer. For split deliveries,
+      this is the date of the LAST leg (max across all delivery legs). NULL
+      if the order is still in transit.
+    synonyms:
+      - delivery date
+      - actual delivery date
+      - delivered date
+      - completion date
+      - arrival date
+      - received date
+    owner: VP Logistics
+    steward: Delivery Operations Lead
+    data_type: date
+    # No SAP field. LIKP-WADAT is the PLANNED goods-issue date and WADAT_IST the actual
+    # one; neither is the date the customer received the order. Binding this term to
+    # either would ground "when was it delivered" on goods issue -- earlier than
+    # delivery, and wrong in the flattering direction for OTD. The value is sourced
+    # from deliveries_raw.delivery_date (proof of delivery), which has no DDIC entry.
+    sap_field: null
+    source_column: fact_order_delivery.final_delivery_date
+
+  - term: Quality Inspection
+    definition: >
+      SAP QM process where finished goods are inspected and a usage decision
+      is recorded. Phase 6 in the 12-phase process model. Standard duration
+      1 day.
+    synonyms:
+      - QM
+      - quality check
+      - inspection
+      - quality control
+      - QC
+      - quality assurance
+      - QA
+      - quality management
+    owner: VP Quality
+    steward: Quality Analytics Lead
+    phase_seq: 6
+    standard_duration_days: 1
+
+  - term: Delay Attribution Phase
+    definition: >
+      The manufacturing phase that caused a late order. Computed as the phase
+      with the largest positive variance (actual_duration - standard_duration).
+      Evaluated only for orders that are eligible, delivered, and late.
+    synonyms:
+      - delay cause
+      - late reason
+      - delay reason
+      - attribution
+      - delay driver
+      - bottleneck phase
+      - constraint phase
+    owner: VP Supply Chain
+    steward: Process Excellence Lead
+    data_type: categorical
+    allowed_values:
+      # The 9 emittable values: one per variance span, phase_seq 2-10. demand_capture
+      # (phase 1) is the chain's start point rather than a span and delivery_confirmation
+      # (phase 11) is absorbed into var_shipment, so neither can ever be produced --
+      # declaring them would let a filter gate admit a query that returns zero rows.
+      - mrp_planning
+      - production_release
+      - material_staging
+      - production_execution
+      - quality_inspection
+      - goods_receipt
+      - picking_packing
+      - goods_issue
+      - transportation
+
+  - term: Order Status
+    definition: >
+      Current status of the sales order. CANC (cancelled) orders are excluded
+      from on-time delivery denominator because they were never due.
+    synonyms:
+      - status
+      - order status
+      - delivery status
+      - fulfillment status
+    owner: VP Sales
+    steward: Order Management Lead
+    data_type: categorical
+    allowed_values:
+      - DLVD
+      - IN_TRANSIT
+      - CANC
+      - OPEN
+    value_labels:
+      DLVD: Delivered
+      IN_TRANSIT: In Transit
+      CANC: Cancelled
+      OPEN: Open / Not Started
+
+  - term: Eligible Orders
+    definition: >
+      Orders that should be counted in the on-time delivery denominator.
+      An order is eligible if it is not cancelled and its promised delivery
+      date is on or before the as-of date (not yet due orders are excluded).
+    synonyms:
+      - eligible
+      - in scope
+      - denominator orders
+      - countable orders
+      - due orders
+    owner: VP Supply Chain
+    steward: Supply Chain Analytics Lead
+    calculation: order_status != 'CANC' AND promised_delivery_date <= AS_OF_DATE
+
+owner: Chief Data Officer
+steward: Data Governance Council
+last_reviewed: 2026-08-01
+approval_state: approved
+version: 1.0

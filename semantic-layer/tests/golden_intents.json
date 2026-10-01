@@ -1,0 +1,39 @@
+{
+  "Q1": {
+    "question": "On-time delivery for India warehouses last month",
+    "expected_value": 87.2727,
+    "expected_numerator": 48,
+    "expected_denominator": 55,
+    "note": "The descriptive path. 'last month' resolves against AS_OF_DATE to July 2026; the window is cut on promised_delivery_date, the metric's declared time dimension. Cutting it on order_date instead returns 33/40 = 82.5% -- plausible, precise, and wrong by 4.8pp.",
+    "intent": {
+      "metric": "on_time_delivery_pct",
+      "dimensions": [],
+      "filters": [{"column": "region", "operator": "=", "value": "IN"}],
+      "grain": "order",
+      "time_window": {"start": "2026-07-01", "end": "2026-07-31", "label": "July 2026"},
+      "intent_type": "descriptive",
+      "comparison": null
+    }
+  },
+  "Q2": {
+    "question": "Why did on-time delivery drop for India warehouses last month?",
+    "expected_value": 87.2727,
+    "expected_numerator": 48,
+    "expected_denominator": 55,
+    "expected_breakdown": {
+      "quality_inspection": 4,
+      "transportation": 2,
+      "production_execution": 1
+    },
+    "note": "The diagnostic path. Same metric, same filters, same window as Q1 -- the only additions are the attribution dimension and the comparison window. That is the point: 'why' is answered by grouping a governed metric on a governed derived dimension, not by a different query.",
+    "intent": {
+      "metric": "on_time_delivery_pct",
+      "dimensions": ["delay_attribution_phase"],
+      "filters": [{"column": "region", "operator": "=", "value": "IN"}],
+      "grain": "order",
+      "time_window": {"start": "2026-07-01", "end": "2026-07-31", "label": "July 2026"},
+      "intent_type": "diagnostic",
+      "comparison": {"start": "2026-06-01", "end": "2026-06-30", "label": "June 2026"}
+    }
+  }
+}

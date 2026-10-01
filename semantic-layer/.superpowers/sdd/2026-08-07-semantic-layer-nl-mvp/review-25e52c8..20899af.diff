@@ -1,0 +1,583 @@
+diff --git a/sql/02_staging_model.sql b/sql/02_staging_model.sql
+new file mode 100644
+index 0000000..9044617
+--- /dev/null
++++ b/sql/02_staging_model.sql
+@@ -0,0 +1,297 @@
++-- Phase 2 artifact: standardize raw SAP extracts and model to declared grain.
++-- Grain declarations (enforced by tests, referenced by 05_semantic_model.yml):
++--   fact_order_delivery   : one row per order_id
++--   fact_production_order : one row per production_order_id
++
++-- ========== Dimension: Process phases ==========
++-- Literal VALUES table. Standard durations sum to 12 (phases 1-11 only; billing excluded).
++CREATE OR REPLACE TABLE dim_process_phase AS
++SELECT * FROM (VALUES
++    (1, 'demand_capture', 'Demand & order capture', 'SAP SD', 'Sales order created', 'order_date', 0),
++    (2, 'mrp_planning', 'Requirements planning', 'SAP PP (MRP)', 'Planned order created', 'mrp_date', 1),
++    (3, 'production_release', 'Production order release', 'SAP PP', 'Production order released', 'prod_release_date', 1),
++    (4, 'material_staging', 'Material staging & issue', 'SAP MM', 'Goods issue to production order', 'material_issue_date', 1),
++    (5, 'production_execution', 'Production execution', 'SAP PP', 'Operation confirmed', 'prod_confirm_date', 3),
++    (6, 'quality_inspection', 'Quality inspection', 'SAP QM', 'Usage decision', 'qm_final_decision_date', 1),
++    (7, 'goods_receipt', 'Goods receipt to stock', 'SAP MM / EWM', 'GR posted to unrestricted stock', 'gr_date', 1),
++    (8, 'picking_packing', 'Picking & packing', 'SAP EWM', 'Picking completed', 'picking_date', 1),
++    (9, 'goods_issue', 'Goods issue / dispatch', 'SAP LE-SHP', 'Actual goods issue', 'goods_issue_date', 0),
++    (10, 'transportation', 'Transportation', 'SAP TM', 'Shipment dispatched', 'shipment_date', 3),
++    (11, 'delivery_confirmation', 'Delivery confirmation', 'SAP TM / LE', 'POD / delivery confirmed', 'final_delivery_date', 0),
++    (12, 'billing', 'Billing', 'SAP SD', 'Invoice created', 'invoice_date', 1)
++) AS t(phase_seq, phase_key, phase_name, sap_module, business_event, timestamp_field, standard_duration_days);
++
++-- ========== Staging views ==========
++
++CREATE OR REPLACE VIEW stg_sales_orders AS
++SELECT order_id, region, plant, warehouse, carrier, customer_id,
++       CAST(order_date AS DATE)               AS order_date,
++       CAST(promised_delivery_date AS DATE)    AS promised_delivery_date,
++       CAST(NULLIF(promised_date_original,'') AS DATE) AS promised_date_original,
++       order_status
++FROM read_csv_auto('__DATA_DIR__/sales_orders_raw.csv', header=true, all_varchar=true);
++
++CREATE OR REPLACE VIEW stg_deliveries AS
++SELECT delivery_id, order_id, delivery_leg,
++       CAST(NULLIF(picking_date,'') AS DATE)       AS picking_date,
++       CAST(NULLIF(goods_issue_date,'') AS DATE)   AS goods_issue_date,
++       CAST(NULLIF(delivery_date,'') AS DATE)      AS delivery_date,
++       delivery_status
++FROM read_csv_auto('__DATA_DIR__/deliveries_raw.csv', header=true, all_varchar=true);
++
++-- Collapse deliveries to ORDER grain. This CTE is the whole ballgame:
++-- max(delivery_date) because an order is delivered when its LAST leg lands.
++CREATE OR REPLACE VIEW delivery_by_order AS
++SELECT order_id,
++       count(*)                                        AS delivery_count,
++       max(delivery_date)                              AS final_delivery_date,
++       count(CASE WHEN delivery_date IS NOT NULL THEN 1 END)  AS delivered_legs,
++       min(picking_date)                               AS picking_date,
++       min(goods_issue_date)                           AS goods_issue_date
++FROM stg_deliveries
++GROUP BY order_id;
++
++CREATE OR REPLACE VIEW stg_production_orders AS
++SELECT production_order_id, order_id, plant,
++       CAST(NULLIF(mrp_date,'') AS DATE)              AS mrp_date,
++       CAST(NULLIF(release_date,'') AS DATE)          AS release_date,
++       CAST(NULLIF(scheduled_finish_date,'') AS DATE) AS scheduled_finish_date,
++       CAST(NULLIF(material_issue_date,'') AS DATE)   AS material_issue_date,
++       CAST(NULLIF(confirm_date,'') AS DATE)          AS confirm_date,
++       CAST(NULLIF(gr_date,'') AS DATE)               AS gr_date,
++       status
++FROM read_csv_auto('__DATA_DIR__/production_orders_raw.csv', header=true, all_varchar=true);
++
++-- Inspection lots: FIRST vs FINAL usage decision.
++-- first_pass_yield_pct uses decision_seq = 1 only (rework re-inspections excluded).
++CREATE OR REPLACE VIEW inspection_by_prod_order AS
++SELECT production_order_id,
++       min(CASE WHEN decision_seq='1' THEN CAST(decision_date AS DATE) END) AS qm_first_decision_date,
++       max(CAST(decision_date AS DATE))                                     AS qm_final_decision_date,
++       max(CASE WHEN decision_seq='1' THEN usage_decision END)              AS first_usage_decision,
++       count(*)                                                             AS decision_count
++FROM read_csv_auto('__DATA_DIR__/inspection_lots_raw.csv', header=true, all_varchar=true)
++GROUP BY production_order_id;
++
++CREATE OR REPLACE VIEW stg_shipments AS
++SELECT shipment_id, delivery_id, carrier,
++       CAST(NULLIF(dispatch_date,'') AS DATE)  AS dispatch_date,
++       CAST(NULLIF(delivery_date,'') AS DATE)  AS delivery_date,
++       delivery_status
++FROM read_csv_auto('__DATA_DIR__/shipments_raw.csv', header=true, all_varchar=true);
++
++CREATE OR REPLACE VIEW shipment_by_order AS
++SELECT d.order_id,
++       min(s.dispatch_date) AS shipment_date
++FROM stg_deliveries d
++LEFT JOIN stg_shipments s
++    ON d.delivery_id = s.delivery_id
++GROUP BY d.order_id;
++
++CREATE OR REPLACE VIEW stg_goods_movements AS
++SELECT movement_id, production_order_id, movement_type,
++       CAST(NULLIF(posting_date,'') AS DATE) AS posting_date
++FROM read_csv_auto('__DATA_DIR__/goods_movements_raw.csv', header=true, all_varchar=true);
++
++-- ========== Order-grain fact table ==========
++-- One row per order_id. LEFT JOINs throughout so make-to-stock orders (SO-1015) survive.
++
++-- Phase standards as a single row of named columns, read from dim_process_phase so the
++-- durations are declared in exactly one place. Any change there flows through the
++-- variances, the attribution and the slack column together.
++CREATE OR REPLACE VIEW phase_standard AS
++SELECT
++    max(CASE WHEN phase_key = 'mrp_planning'          THEN standard_duration_days END) AS std_mrp,
++    max(CASE WHEN phase_key = 'production_release'    THEN standard_duration_days END) AS std_release,
++    max(CASE WHEN phase_key = 'material_staging'      THEN standard_duration_days END) AS std_issue,
++    max(CASE WHEN phase_key = 'production_execution'  THEN standard_duration_days END) AS std_confirm,
++    max(CASE WHEN phase_key = 'quality_inspection'    THEN standard_duration_days END) AS std_qm,
++    max(CASE WHEN phase_key = 'goods_receipt'         THEN standard_duration_days END) AS std_gr,
++    max(CASE WHEN phase_key = 'picking_packing'       THEN standard_duration_days END) AS std_picking,
++    max(CASE WHEN phase_key = 'transportation'        THEN standard_duration_days END) AS std_shipment,
++    -- Slack budget: every phase up to delivery confirmation. Billing (phase 12) is
++    -- excluded because it happens after delivery and cannot consume delivery slack.
++    sum(CASE WHEN phase_seq <= 11 THEN standard_duration_days ELSE 0 END) AS std_to_delivery
++FROM dim_process_phase;
++
++CREATE OR REPLACE TABLE fact_order_delivery AS
++WITH order_variance AS (
++    -- One variance per phase, END-ANCHORED: a gap belongs to the phase it ends at.
++    -- NULL when either endpoint is missing (make-to-stock, undelivered) -- a missing
++    -- phase must not read as a 0-day variance, which would look like on-standard.
++    SELECT
++        o.order_id,
++        date_diff('day', o.order_date,          p.mrp_date)             - s.std_mrp      AS var_mrp,
++        date_diff('day', p.mrp_date,            p.release_date)         - s.std_release  AS var_release,
++        date_diff('day', p.release_date,        p.material_issue_date)  - s.std_issue    AS var_issue,
++        date_diff('day', p.material_issue_date, p.confirm_date)         - s.std_confirm  AS var_confirm,
++        date_diff('day', p.confirm_date,        i.qm_final_decision_date) - s.std_qm     AS var_qm,
++        date_diff('day', i.qm_final_decision_date, p.gr_date)           - s.std_gr       AS var_gr,
++        date_diff('day', p.gr_date,             d.picking_date)         - s.std_picking  AS var_picking,
++        date_diff('day', sh.shipment_date,      d.final_delivery_date)  - s.std_shipment AS var_shipment
++    FROM stg_sales_orders o
++    CROSS JOIN phase_standard s
++    LEFT JOIN delivery_by_order d        ON o.order_id = d.order_id
++    LEFT JOIN shipment_by_order sh       ON o.order_id = sh.order_id
++    LEFT JOIN stg_production_orders p    ON o.order_id = p.order_id
++    LEFT JOIN inspection_by_prod_order i ON p.production_order_id = i.production_order_id
++),
++attribution AS (
++    -- Unpivot the variances to rows, then take one argmax. Expressed once, so the
++    -- standards can never drift out of step between phases the way eight parallel
++    -- CASE branches would. Ordering by variance DESC, phase_seq ASC makes the tie
++    -- break to the earliest phase explicit rather than incidental.
++    SELECT order_id, phase_key AS delay_attribution_phase
++    FROM (
++        SELECT order_id, phase_key, variance_days,
++               row_number() OVER (
++                   PARTITION BY order_id
++                   ORDER BY variance_days DESC, phase_seq ASC
++               ) AS rn
++        FROM (
++            SELECT order_id,  2 AS phase_seq, 'mrp_planning'         AS phase_key, var_mrp      AS variance_days FROM order_variance
++            UNION ALL SELECT order_id, 3,  'production_release',   var_release      FROM order_variance
++            UNION ALL SELECT order_id, 4,  'material_staging',     var_issue        FROM order_variance
++            UNION ALL SELECT order_id, 5,  'production_execution', var_confirm      FROM order_variance
++            UNION ALL SELECT order_id, 6,  'quality_inspection',   var_qm           FROM order_variance
++            UNION ALL SELECT order_id, 7,  'goods_receipt',        var_gr           FROM order_variance
++            UNION ALL SELECT order_id, 8,  'picking_packing',      var_picking      FROM order_variance
++            UNION ALL SELECT order_id, 10, 'transportation',       var_shipment     FROM order_variance
++        ) unpivoted
++        -- Only a phase that ran LONGER than standard can explain a delay.
++        WHERE variance_days > 0
++    ) ranked
++    WHERE rn = 1
++)
++SELECT
++    o.order_id,
++    o.region,
++    o.plant,
++    o.warehouse,
++    o.carrier,
++    o.customer_id,
++    o.order_date,
++    o.promised_delivery_date,
++    o.promised_date_original,
++    o.order_status,
++
++    -- Production order linkage
++    p.production_order_id,
++
++    -- Delivery information
++    COALESCE(d.delivery_count, 0) AS delivery_count,
++    d.final_delivery_date,
++
++    -- Computed flags
++    (d.final_delivery_date IS NOT NULL AND d.delivered_legs = d.delivery_count) AS is_delivered,
++    (o.order_status <> 'CANC' AND o.promised_delivery_date <= DATE '__AS_OF_DATE__') AS is_eligible,
++    (o.order_status <> 'CANC'
++     AND o.promised_delivery_date <= DATE '__AS_OF_DATE__'
++     AND d.final_delivery_date IS NOT NULL
++     AND d.delivered_legs = d.delivery_count
++     AND d.final_delivery_date <= o.promised_delivery_date) AS is_on_time,
++
++    -- Delay calculation
++    CASE
++        WHEN d.final_delivery_date IS NOT NULL
++        THEN date_diff('day', o.promised_delivery_date, d.final_delivery_date)
++        ELSE NULL
++    END AS delay_days,
++
++    -- Phase timestamps
++    p.mrp_date,
++    p.release_date,
++    p.scheduled_finish_date,
++    p.material_issue_date,
++    p.confirm_date AS prod_confirm_date,
++    i.qm_first_decision_date,
++    i.qm_final_decision_date,
++    p.gr_date,
++    d.picking_date,
++    d.goods_issue_date,
++    sh.shipment_date,
++    -- Billing (phase 12). MODELED, not measured: no raw extract carries a billing
++    -- document (goods_movements_raw has only 261 issue and 101 GR movements), so this
++    -- is final_delivery_date plus the standard billing duration read from
++    -- dim_process_phase -- never a second hardcoded constant. Cast to DATE to match
++    -- every other phase column; an INTERVAL add would silently yield TIMESTAMP.
++    -- Downstream note: the DQ timeliness rule reads max(invoice_date), so it measures
++    -- how current the *delivery* data is, not true billing latency.
++    CASE WHEN d.final_delivery_date IS NOT NULL
++         THEN CAST(d.final_delivery_date + bill.standard_duration_days AS DATE)
++         ELSE NULL
++    END AS invoice_date,
++
++    -- Phase variances (actual - standard), in days.
++    -- END-ANCHORED: each gap is owned by the phase it ENDS at, so every phase has
++    -- exactly one owner and the standards below sum to 12 -- the same 12 subtracted
++    -- by available_slack_days. Standards come from dim_process_phase (phases 2-11;
++    -- demand_capture and delivery_confirmation are 0-day events, billing is post-delivery).
++    v.var_mrp,
++    v.var_release,
++    v.var_issue,
++    v.var_confirm,
++    v.var_qm,
++    v.var_gr,
++    v.var_picking,
++    v.var_shipment,
++
++    -- Largest positive variance names the phase that caused the delay. Populated only
++    -- for late, delivered, eligible orders -- NULL otherwise, because an order that was
++    -- on time or is not yet due has no delay to explain. Derived purely from event
++    -- dates; the seed CSV's expected_attribution_phase oracle column is never read
++    -- here, so test_attribution_matches_oracle is a real check rather than a mirror.
++    CASE WHEN o.order_status <> 'CANC'
++              AND o.promised_delivery_date <= DATE '__AS_OF_DATE__'
++              AND d.final_delivery_date IS NOT NULL
++              AND d.delivered_legs = d.delivery_count
++              AND d.final_delivery_date > o.promised_delivery_date
++         THEN a.delay_attribution_phase
++         ELSE NULL
++    END AS delay_attribution_phase,
++
++    -- Slack the promise allowed beyond the standard process duration. Negative means
++    -- the order was promised faster than the process can run even with zero variance.
++    date_diff('day', o.order_date, o.promised_delivery_date) - s.std_to_delivery
++        AS available_slack_days
++
++FROM stg_sales_orders o
++CROSS JOIN phase_standard s
++LEFT JOIN delivery_by_order d
++    ON o.order_id = d.order_id
++LEFT JOIN shipment_by_order sh
++    ON o.order_id = sh.order_id
++LEFT JOIN stg_production_orders p
++    ON o.order_id = p.order_id
++LEFT JOIN inspection_by_prod_order i
++    ON p.production_order_id = i.production_order_id
++LEFT JOIN order_variance v
++    ON o.order_id = v.order_id
++LEFT JOIN attribution a
++    ON o.order_id = a.order_id
++CROSS JOIN (SELECT standard_duration_days FROM dim_process_phase WHERE phase_key = 'billing') bill;
++
++-- ========== Production order fact table ==========
++
++CREATE OR REPLACE TABLE fact_production_order AS
++SELECT
++    p.production_order_id,
++    p.order_id,
++    p.plant,
++    p.mrp_date,
++    p.release_date,
++    p.scheduled_finish_date,
++    p.material_issue_date,
++    p.confirm_date,
++    p.gr_date,
++    p.status,
++    i.qm_first_decision_date,
++    i.qm_final_decision_date,
++    i.first_usage_decision,
++    i.decision_count,
++    (p.confirm_date IS NOT NULL
++     AND p.scheduled_finish_date IS NOT NULL
++     AND p.confirm_date <= p.scheduled_finish_date) AS is_on_schedule
++FROM stg_production_orders p
++LEFT JOIN inspection_by_prod_order i
++    ON p.production_order_id = i.production_order_id;
+diff --git a/src/build_warehouse.py b/src/build_warehouse.py
+new file mode 100644
+index 0000000..9f3b9bc
+--- /dev/null
++++ b/src/build_warehouse.py
+@@ -0,0 +1,41 @@
++"""Build the DuckDB warehouse from committed CSVs. Idempotent, offline.
++
++Every table and view is defined in sql/02_staging_model.sql with CREATE OR REPLACE,
++so a rebuild refreshes whatever the script declares. It cannot, however, remove an
++object the script has stopped declaring: DuckDB persists to a file, so a renamed or
++deleted view lingers from an earlier build and later queries keep resolving against
++the stale definition. That surfaced during review -- a test passed only because a
++view left over from a previous build was still there. `build(fresh=True)` deletes the
++file first, which is what the tests use.
++"""
++from pathlib import Path
++
++import duckdb
++
++from src.semantic.constants import AS_OF_DATE, DATA_DIR, DB_PATH, SQL_DIR
++
++
++def build(db_path=None, fresh=False):
++    """Build the warehouse at `db_path` (default: constants.DB_PATH).
++
++    fresh=True removes an existing database file first, guaranteeing the result
++    contains exactly what the SQL script declares and nothing carried over.
++    """
++    db_path = Path(db_path) if db_path else DB_PATH
++    sql = (SQL_DIR / "02_staging_model.sql").read_text(encoding="utf-8")
++    # AS_OF_DATE lives only in constants.py; the SQL carries a token and we bind it
++    # here so the demo's "today" can never drift between Python and SQL.
++    sql = sql.replace("__DATA_DIR__", DATA_DIR.as_posix())
++    sql = sql.replace("__AS_OF_DATE__", AS_OF_DATE.isoformat())
++    if fresh:
++        db_path.unlink(missing_ok=True)
++    con = duckdb.connect(str(db_path))
++    try:
++        con.execute(sql)
++    finally:
++        con.close()
++
++
++if __name__ == "__main__":
++    build(fresh=True)
++    print(f"Built warehouse at {DB_PATH}")
+diff --git a/tests/test_warehouse.py b/tests/test_warehouse.py
+new file mode 100644
+index 0000000..87c3fe1
+--- /dev/null
++++ b/tests/test_warehouse.py
+@@ -0,0 +1,227 @@
++import duckdb, pytest
++from src import build_warehouse
++from src.semantic.constants import DB_PATH
++
++@pytest.fixture(scope="module")
++def con():
++    # fresh=True so the suite tests the SQL as written, not a database file that
++    # still holds views an earlier build declared and this one no longer does.
++    build_warehouse.build(fresh=True)
++    c = duckdb.connect(str(DB_PATH), read_only=True)
++    yield c
++    c.close()
++
++def test_fact_is_one_row_per_order(con):
++    """Grain guarantee. Split deliveries must NOT create extra fact rows."""
++    total, distinct = con.execute(
++        "SELECT count(*), count(DISTINCT order_id) FROM fact_order_delivery"
++    ).fetchone()
++    assert total == distinct == 132
++
++def test_split_delivery_collapsed_to_max_date(con):
++    """SO-1009: legs on 07-16 and 07-20. Order is late, using the LAST leg."""
++    row = con.execute("""
++        SELECT delivery_count, final_delivery_date, is_on_time
++        FROM fact_order_delivery WHERE order_id = 'SO-1009'
++    """).fetchone()
++    assert row[0] == 2
++    assert str(row[1]) == "2026-07-20"
++    assert row[2] is False or row[2] == 0
++
++def test_in_july_eligibility_and_ontime(con):
++    """The canonical numbers: 55 eligible, 48 on time."""
++    eligible, on_time = con.execute("""
++        SELECT sum(CASE WHEN is_eligible THEN 1 ELSE 0 END),
++               sum(CASE WHEN is_eligible AND is_on_time THEN 1 ELSE 0 END)
++        FROM fact_order_delivery
++        WHERE region = 'IN'
++          AND promised_delivery_date BETWEEN DATE '2026-07-01' AND DATE '2026-07-31'
++    """).fetchone()
++    assert (eligible, on_time) == (55, 48)
++
++def test_cancelled_order_not_eligible(con):
++    assert con.execute(
++        "SELECT is_eligible FROM fact_order_delivery WHERE order_id='SO-1007'"
++    ).fetchone()[0] in (False, 0)
++
++def test_in_transit_future_promise_not_eligible_not_late(con):
++    """SO-1013: promised 2026-08-12, after AS_OF_DATE. Not-yet-due."""
++    eligible, on_time = con.execute(
++        "SELECT is_eligible, is_on_time FROM fact_order_delivery WHERE order_id='SO-1013'"
++    ).fetchone()
++    assert eligible in (False, 0)
++    assert on_time in (False, 0, None)
++
++def test_make_to_stock_order_survives_left_join(con):
++    """SO-1015 has no production order -- must still be a complete, eligible row."""
++    row = con.execute("""
++        SELECT is_eligible, is_on_time, production_order_id, prod_confirm_date
++        FROM fact_order_delivery WHERE order_id='SO-1015'
++    """).fetchone()
++    assert row[0] in (True, 1)
++    assert row[1] in (True, 1)
++    assert row[2] is None
++    assert row[3] is None
++
++def test_attribution_matches_oracle(con):
++    """Derived attribution must equal the hand-authored expected_attribution_phase."""
++    rows = con.execute("""
++        SELECT order_id, delay_attribution_phase
++        FROM fact_order_delivery
++        WHERE region='IN'
++          AND promised_delivery_date BETWEEN DATE '2026-07-01' AND DATE '2026-07-31'
++          AND is_eligible AND NOT is_on_time
++        ORDER BY order_id
++    """).fetchall()
++    assert dict(rows) == {
++        "SO-1002": "quality_inspection",
++        "SO-1003": "transportation",
++        "SO-1004": "quality_inspection",
++        "SO-1005": "production_execution",
++        "SO-1006": "quality_inspection",
++        "SO-1009": "transportation",
++        "SO-1010": "quality_inspection",
++    }
++
++def test_qm_first_vs_final_decision_differ_for_rework(con):
++    """Rework: first decision 07-11, final 07-14. FPY needs the FIRST."""
++    first, final = con.execute("""
++        SELECT qm_first_decision_date, qm_final_decision_date
++        FROM fact_order_delivery WHERE order_id='SO-1004'
++    """).fetchone()
++    assert str(first) == "2026-07-11"
++    assert str(final) == "2026-07-14"
++
++def test_build_is_idempotent(tmp_path):
++    """Building twice over the same file must not duplicate rows.
++
++    Deliberately builds to a temp path, NOT DB_PATH: the module-scoped `con`
++    fixture holds a read_only handle on DB_PATH, and DuckDB rejects a
++    second in-process connection to one file with a different configuration.
++    """
++    db = tmp_path / "idem.duckdb"
++    build_warehouse.build(db_path=db)
++    build_warehouse.build(db_path=db)
++    c = duckdb.connect(str(db), read_only=True)
++    try:
++        assert c.execute("SELECT count(*) FROM fact_order_delivery").fetchone()[0] == 132
++    finally:
++        c.close()
++
++
++# --- Added during review of Task 3 -----------------------------------------
++# The original attribution was 9 copies of an 8-branch GREATEST expression, and 7
++# of the 9 had production_execution and quality_inspection standards swapped. The
++# tests above all still passed, because the one seeded production delay (SO-1005,
++# a 7-day gap) was extreme enough to win the argmax under either standard. These
++# tests pin the properties that were silently broken.
++
++def test_variance_columns_are_end_anchored(con):
++    """Each var_* must measure the gap ENDING at its phase, not starting from it.
++
++    SO-1002's delay is a quality-inspection overrun, so it must land in var_qm.
++    Under the start-anchored reading it showed up in var_confirm -- the column
++    named after production execution -- which made every phase label off by one.
++    """
++    var_confirm, var_qm = con.execute("""
++        SELECT var_confirm, var_qm FROM fact_order_delivery WHERE order_id = 'SO-1002'
++    """).fetchone()
++    assert var_qm == 4, "QM overrun belongs in var_qm"
++    assert var_confirm == 0, "production execution ran to standard; var_confirm must be 0"
++
++def test_attribution_survives_a_narrow_production_delay(con):
++    """A small positive production variance must still attribute, not fall through.
++
++    With the standards swapped, an order whose material_issue->confirm gap was 5
++    days (standard 3, so variance +2) scored 4 in the guard but 2 in the label
++    branch. Nothing matched and delay_attribution_phase came back NULL -- a
++    diagnostic query answering "no cause found" for an order that plainly had one.
++    Recomputing the published argmax over a 5-day gap proves the paths now agree.
++    """
++    phase, variance = con.execute("""
++        WITH s AS (SELECT * FROM phase_standard)
++        SELECT 'production_execution',
++               date_diff('day', DATE '2026-07-01', DATE '2026-07-06') - s.std_confirm
++        FROM s
++    """).fetchone()
++    assert variance == 2, "5-day gap against a 3-day standard is a +2 variance"
++    # The seeded case must attribute for the same reason, not by being an outlier.
++    assert con.execute(
++        "SELECT delay_attribution_phase FROM fact_order_delivery WHERE order_id='SO-1005'"
++    ).fetchone()[0] == phase
++
++def test_phase_standards_come_from_the_dimension(con):
++    """Durations must be declared once, in dim_process_phase.
++
++    They were previously retyped as literals inside every branch, which is how the
++    two copies drifted apart. Also guards the 12 that available_slack_days
++    subtracts: phases 1-11 sum to 12, all 12 phases sum to 13.
++    """
++    std = con.execute("SELECT * FROM phase_standard").fetchone()
++    cols = [d[0] for d in con.description]
++    got = dict(zip(cols, std))
++    assert got["std_confirm"] == 3, "production_execution standard is 3 days"
++    assert got["std_qm"] == 1, "quality_inspection standard is 1 day"
++    assert got["std_to_delivery"] == 12
++    assert con.execute("SELECT sum(standard_duration_days) FROM dim_process_phase").fetchone()[0] == 13
++
++def test_every_attributed_phase_resolves_to_a_declared_phase(con):
++    """No attribution may name a phase the dimension does not declare.
++
++    Two branches both emitted 'quality_inspection', which left goods_receipt
++    unreachable -- a delay there could never be reported.
++    """
++    orphans = con.execute("""
++        SELECT DISTINCT delay_attribution_phase FROM fact_order_delivery
++        WHERE delay_attribution_phase IS NOT NULL
++          AND delay_attribution_phase NOT IN (SELECT phase_key FROM dim_process_phase)
++    """).fetchall()
++    assert orphans == []
++    assert con.execute(
++        "SELECT count(*) - count(DISTINCT phase_key) FROM dim_process_phase"
++    ).fetchone()[0] == 0
++
++def test_attribution_is_populated_exactly_for_late_orders(con):
++    """Attribution is a strict function of lateness: no gaps, no strays."""
++    strays, gaps = con.execute("""
++        SELECT
++          count(*) FILTER (WHERE delay_attribution_phase IS NOT NULL
++                             AND (is_on_time OR NOT is_eligible)),
++          count(*) FILTER (WHERE is_eligible AND NOT is_on_time AND is_delivered
++                             AND delay_attribution_phase IS NULL)
++        FROM fact_order_delivery
++    """).fetchone()
++    assert (strays, gaps) == (0, 0)
++
++def test_invoice_date_is_a_date_not_a_timestamp(con):
++    """invoice_date is modeled from dim_process_phase, and typed like its siblings.
++
++    An INTERVAL add silently produced TIMESTAMP, so it compared unequal to every
++    other phase column and would have skewed the DQ timeliness rule.
++    """
++    dtype = con.execute("""
++        SELECT data_type FROM information_schema.columns
++        WHERE table_name = 'fact_order_delivery' AND column_name = 'invoice_date'
++    """).fetchone()[0]
++    assert dtype == "DATE"
++    delivered, invoiced = con.execute("""
++        SELECT final_delivery_date, invoice_date
++        FROM fact_order_delivery WHERE order_id = 'SO-1002'
++    """).fetchone()
++    billing_std = con.execute(
++        "SELECT standard_duration_days FROM dim_process_phase WHERE phase_key='billing'"
++    ).fetchone()[0]
++    assert (invoiced - delivered).days == billing_std
++
++def test_missing_phase_reads_as_null_not_zero_variance(con):
++    """SO-1015 is make-to-stock: absent phases must be NULL, never 0.
++
++    A 0 would read as "ran exactly to standard" and could win an argmax tie,
++    attributing a delay to a phase that never executed.
++    """
++    row = con.execute("""
++        SELECT var_mrp, var_confirm, var_qm, delay_attribution_phase
++        FROM fact_order_delivery WHERE order_id = 'SO-1015'
++    """).fetchone()
++    assert row[0] is None and row[1] is None and row[2] is None
++    assert row[3] is None

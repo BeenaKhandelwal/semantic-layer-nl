@@ -1,0 +1,269 @@
+# Phase 3 artifact: Column bindings mapping glossary terms to physical columns
+#
+# This file binds business terms from 03_glossary.yml to actual columns in
+# fact_order_delivery and fact_production_order. These bindings enable the
+# resolver to translate natural language filters and dimensions into SQL.
+#
+# CRITICAL: All columns referenced here must exist in the warehouse.
+# A test validates every binding against PRAGMA table_info().
+#
+# scope: business  -- the term is defined in 03_glossary.yml, so a user can name it
+#                     in natural language and the resolver can bind it.
+# scope: internal  -- a physical column the compiler reads (variances, flags, raw phase
+#                     timestamps). Deliberately NOT in the glossary: exposing 27 more
+#                     terms to the resolver widens the guess space without answering a
+#                     question anyone asks. A test enforces that every business-scoped
+#                     binding has a glossary entry, so this stays a decision rather
+#                     than drift.
+
+bindings:
+  # Metrics (computed in semantic model, not direct column bindings)
+  # On-Time Delivery %, Manufacturing Schedule Adherence %, First Pass Yield %
+  # are expressed as expressions in 05_semantic_model.yml
+
+  # Order dimensions and attributes
+  - term: Sales Order
+    table: fact_order_delivery
+    column: order_id
+    scope: business
+
+  - term: Region
+    table: fact_order_delivery
+    column: region
+    scope: business
+
+  - term: Plant
+    table: fact_order_delivery
+    column: plant
+    scope: business
+
+  - term: Warehouse
+    table: fact_order_delivery
+    column: warehouse
+    scope: business
+
+  - term: Carrier
+    table: fact_order_delivery
+    column: carrier
+    scope: business
+
+  - term: Order Status
+    table: fact_order_delivery
+    column: order_status
+    scope: business
+
+  - term: Promised Delivery Date
+    table: fact_order_delivery
+    column: promised_delivery_date
+    scope: business
+
+  - term: Delivery Date
+    table: fact_order_delivery
+    column: final_delivery_date
+    scope: business
+
+  - term: Delay Attribution Phase
+    table: fact_order_delivery
+    column: delay_attribution_phase
+    scope: business
+
+  # Production order linkage
+  - term: Production Order
+    table: fact_order_delivery
+    column: production_order_id
+    scope: business
+
+  # Production order attributes
+  - term: Production Order
+    table: fact_production_order
+    column: production_order_id
+    scope: business
+
+  - term: Sales Order
+    table: fact_production_order
+    column: order_id
+    scope: business
+
+  # Phase timestamps (order grain)
+  - term: MRP Date
+    table: fact_order_delivery
+    column: mrp_date
+    scope: internal
+
+  - term: Production Release Date
+    table: fact_order_delivery
+    column: release_date
+    scope: internal
+
+  - term: Material Issue Date
+    table: fact_order_delivery
+    column: material_issue_date
+    scope: internal
+
+  - term: Production Confirm Date
+    table: fact_order_delivery
+    column: prod_confirm_date
+    scope: internal
+
+  - term: QM First Decision Date
+    table: fact_order_delivery
+    column: qm_first_decision_date
+    scope: internal
+
+  - term: QM Final Decision Date
+    table: fact_order_delivery
+    column: qm_final_decision_date
+    scope: internal
+
+  - term: Goods Receipt Date
+    table: fact_order_delivery
+    column: gr_date
+    scope: internal
+
+  - term: Picking Date
+    table: fact_order_delivery
+    column: picking_date
+    scope: internal
+
+  - term: Goods Issue Date
+    table: fact_order_delivery
+    column: goods_issue_date
+    scope: internal
+
+  - term: Shipment Date
+    table: fact_order_delivery
+    column: shipment_date
+    scope: internal
+
+  - term: Invoice Date
+    table: fact_order_delivery
+    column: invoice_date
+    scope: internal
+
+  # Variance columns (actual - standard duration per phase)
+  - term: MRP Variance
+    table: fact_order_delivery
+    column: var_mrp
+    scope: internal
+
+  - term: Release Variance
+    table: fact_order_delivery
+    column: var_release
+    scope: internal
+
+  - term: Material Issue Variance
+    table: fact_order_delivery
+    column: var_issue
+    scope: internal
+
+  - term: Production Confirm Variance
+    table: fact_order_delivery
+    column: var_confirm
+    scope: internal
+
+  - term: QM Variance
+    table: fact_order_delivery
+    column: var_qm
+    scope: internal
+
+  - term: Goods Receipt Variance
+    table: fact_order_delivery
+    column: var_gr
+    scope: internal
+
+  - term: Picking Variance
+    table: fact_order_delivery
+    column: var_picking
+    scope: internal
+
+  - term: Goods Issue Variance
+    table: fact_order_delivery
+    column: var_goods_issue
+    scope: internal
+
+  - term: Shipment Variance
+    table: fact_order_delivery
+    column: var_shipment
+    scope: internal
+
+  # Computed flags and metrics
+  - term: Is Delivered
+    table: fact_order_delivery
+    column: is_delivered
+    scope: internal
+
+  - term: Is Eligible
+    table: fact_order_delivery
+    column: is_eligible
+    scope: internal
+
+  - term: Is On Time
+    table: fact_order_delivery
+    column: is_on_time
+    scope: internal
+
+  - term: Delay Days
+    table: fact_order_delivery
+    column: delay_days
+    scope: internal
+
+  - term: Available Slack Days
+    table: fact_order_delivery
+    column: available_slack_days
+    scope: internal
+
+  # Production order phase timestamps
+  - term: MRP Date
+    table: fact_production_order
+    column: mrp_date
+    scope: internal
+
+  - term: Production Release Date
+    table: fact_production_order
+    column: release_date
+    scope: internal
+
+  - term: Scheduled Finish Date
+    table: fact_production_order
+    column: scheduled_finish_date
+    scope: internal
+
+  - term: Material Issue Date
+    table: fact_production_order
+    column: material_issue_date
+    scope: internal
+
+  - term: Production Confirm Date
+    table: fact_production_order
+    column: confirm_date
+    scope: internal
+
+  - term: Goods Receipt Date
+    table: fact_production_order
+    column: gr_date
+    scope: internal
+
+  - term: QM First Decision Date
+    table: fact_production_order
+    column: qm_first_decision_date
+    scope: internal
+
+  - term: QM Final Decision Date
+    table: fact_production_order
+    column: qm_final_decision_date
+    scope: internal
+
+  - term: Is On Schedule
+    table: fact_production_order
+    column: is_on_schedule
+    scope: internal
+
+owner: Data Engineering Team
+steward: Data Governance Council
+last_reviewed: 2026-08-01
+approval_state: approved
+version: 1.0
+notes: >
+  Bindings are validated at build time against the actual warehouse schema.
+  Any binding referencing a non-existent column will cause test_bindings_reference_real_fact_columns
+  to fail, preventing deployment of broken metadata.

@@ -1,0 +1,23 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Test / tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Build artifact: rebuilt from data/*_raw.csv by sql/build_warehouse.py
+# The .wal is DuckDB's write-ahead log; it appears after an interrupted connection.
+warehouse.duckdb
+warehouse.duckdb.wal
+
+# Secrets
+.env
+
+# Agent worktrees (parallel task execution); not part of the deliverable
+.claude/

@@ -1,0 +1,1668 @@
+# Review package: 72b693b43d3bb51f888da56fd335000f571cd1d4..HEAD
+
+## Commits
+3900d7b feat: add deterministic data generator producing 132-order dataset
+
+## Files changed
+ data/deliveries_raw.csv        | 135 ++++++++++
+ data/generate.py               | 593 +++++++++++++++++++++++++++++++++++++++++
+ data/goods_movements_raw.csv   | 255 ++++++++++++++++++
+ data/inspection_lots_raw.csv   | 129 +++++++++
+ data/production_orders_raw.csv | 132 +++++++++
+ data/sales_orders_raw.csv      | 133 +++++++++
+ data/shipments_raw.csv         | 135 ++++++++++
+ tests/test_data.py             |  82 ++++++
+ 8 files changed, 1594 insertions(+)
+
+## Diff
+diff --git a/data/deliveries_raw.csv b/data/deliveries_raw.csv
+new file mode 100644
+index 0000000..6c8fa1a
+--- /dev/null
++++ b/data/deliveries_raw.csv
+@@ -0,0 +1,135 @@
++delivery_id,order_id,delivery_leg,picking_date,goods_issue_date,delivery_date,delivery_status
++DL-1001,SO-1001,1,2026-07-10,2026-07-10,2026-07-12,DLVD
++DL-1002,SO-1002,1,2026-07-14,2026-07-14,2026-07-16,DLVD
++DL-1003,SO-1003,1,2026-07-11,2026-07-11,2026-07-19,DLVD
++DL-1004,SO-1004,1,2026-07-16,2026-07-16,2026-07-18,DLVD
++DL-1005,SO-1005,1,2026-07-16,2026-07-16,2026-07-18,DLVD
++DL-1006,SO-1006,1,2026-07-17,2026-07-17,2026-07-19,DLVD
++DL-1008,SO-1008,1,2026-07-13,2026-07-13,2026-07-15,DLVD
++DL-1009A,SO-1009,1,2026-07-14,2026-07-14,2026-07-16,DLVD
++DL-1009B,SO-1009,2,2026-07-14,2026-07-14,2026-07-20,DLVD
++DL-1010,SO-1010,1,2026-07-20,2026-07-20,2026-07-22,DLVD
++DL-1011,SO-1011,1,2026-07-15,2026-07-15,2026-07-21,DLVD
++DL-1012A,SO-1012,1,2026-07-16,2026-07-16,2026-07-18,DLVD
++DL-1012B,SO-1012,2,2026-07-16,2026-07-16,2026-07-18,DLVD
++DL-1013,SO-1013,1,2026-08-06,2026-08-06,,IN_TRANSIT
++DL-1014A,SO-1014,1,2026-07-17,2026-07-17,2026-07-19,DLVD
++DL-1014B,SO-1014,2,2026-07-17,2026-07-17,2026-07-19,DLVD
++DL-1015,SO-1015,1,2026-07-17,2026-07-17,2026-07-19,DLVD
++DL-1016A,SO-1016,1,2026-07-19,2026-07-19,2026-07-21,DLVD
++DL-1016B,SO-1016,2,2026-07-19,2026-07-19,2026-07-21,DLVD
++DL-1017A,SO-1017,1,2026-07-20,2026-07-20,2026-07-22,DLVD
++DL-1017B,SO-1017,2,2026-07-20,2026-07-20,2026-07-22,DLVD
++DL-1018A,SO-1018,1,2026-07-21,2026-07-21,2026-07-23,DLVD
++DL-1018B,SO-1018,2,2026-07-21,2026-07-21,2026-07-23,DLVD
++DL-1019,SO-1019,1,2026-06-10,2026-06-10,2026-06-18,DLVD
++DL-1020,SO-1020,1,2026-07-10,2026-07-10,2026-07-12,DLVD
++DL-2001,SO-2001,1,2026-06-27,2026-06-27,2026-07-01,DLVD
++DL-2002,SO-2002,1,2026-07-25,2026-07-25,2026-07-29,DLVD
++DL-2003,SO-2003,1,2026-06-27,2026-06-27,2026-07-01,DLVD
++DL-2004,SO-2004,1,2026-07-22,2026-07-22,2026-07-26,DLVD
++DL-2005,SO-2005,1,2026-07-11,2026-07-11,2026-07-15,DLVD
++DL-2006,SO-2006,1,2026-07-24,2026-07-24,2026-07-28,DLVD
++DL-2007,SO-2007,1,2026-07-25,2026-07-25,2026-07-29,DLVD
++DL-2008,SO-2008,1,2026-07-03,2026-07-03,2026-07-07,DLVD
++DL-2009,SO-2009,1,2026-07-25,2026-07-25,2026-07-29,DLVD
++DL-2010,SO-2010,1,2026-06-27,2026-06-27,2026-07-01,DLVD
++DL-2011,SO-2011,1,2026-07-13,2026-07-13,2026-07-17,DLVD
++DL-2012,SO-2012,1,2026-06-29,2026-06-29,2026-07-03,DLVD
++DL-2013,SO-2013,1,2026-07-23,2026-07-23,2026-07-27,DLVD
++DL-2014,SO-2014,1,2026-07-19,2026-07-19,2026-07-23,DLVD
++DL-2015,SO-2015,1,2026-07-10,2026-07-10,2026-07-14,DLVD
++DL-2016,SO-2016,1,2026-07-02,2026-07-02,2026-07-06,DLVD
++DL-2017,SO-2017,1,2026-07-24,2026-07-24,2026-07-28,DLVD
++DL-2018,SO-2018,1,2026-07-26,2026-07-26,2026-07-30,DLVD
++DL-2019,SO-2019,1,2026-07-06,2026-07-06,2026-07-10,DLVD
++DL-2020,SO-2020,1,2026-07-01,2026-07-01,2026-07-05,DLVD
++DL-2021,SO-2021,1,2026-07-18,2026-07-18,2026-07-22,DLVD
++DL-2022,SO-2022,1,2026-07-17,2026-07-17,2026-07-21,DLVD
++DL-2023,SO-2023,1,2026-07-19,2026-07-19,2026-07-23,DLVD
++DL-2024,SO-2024,1,2026-07-04,2026-07-04,2026-07-08,DLVD
++DL-2025,SO-2025,1,2026-07-22,2026-07-22,2026-07-26,DLVD
++DL-2026,SO-2026,1,2026-07-20,2026-07-20,2026-07-24,DLVD
++DL-2027,SO-2027,1,2026-06-30,2026-06-30,2026-07-04,DLVD
++DL-2028,SO-2028,1,2026-07-22,2026-07-22,2026-07-26,DLVD
++DL-2029,SO-2029,1,2026-07-20,2026-07-20,2026-07-24,DLVD
++DL-2030,SO-2030,1,2026-07-04,2026-07-04,2026-07-08,DLVD
++DL-2031,SO-2031,1,2026-07-02,2026-07-02,2026-07-06,DLVD
++DL-2032,SO-2032,1,2026-07-03,2026-07-03,2026-07-07,DLVD
++DL-2033,SO-2033,1,2026-07-25,2026-07-25,2026-07-29,DLVD
++DL-2034,SO-2034,1,2026-06-29,2026-06-29,2026-07-03,DLVD
++DL-2035,SO-2035,1,2026-07-04,2026-07-04,2026-07-08,DLVD
++DL-2036,SO-2036,1,2026-07-12,2026-07-12,2026-07-16,DLVD
++DL-2037,SO-2037,1,2026-07-19,2026-07-19,2026-07-23,DLVD
++DL-2038,SO-2038,1,2026-07-25,2026-07-25,2026-07-29,DLVD
++DL-2039,SO-2039,1,2026-07-20,2026-07-20,2026-07-24,DLVD
++DL-2041,SO-2041,1,2026-06-03,2026-06-03,2026-06-07,DLVD
++DL-2042,SO-2042,1,2026-06-19,2026-06-19,2026-06-23,DLVD
++DL-2043,SO-2043,1,2026-05-31,2026-05-31,2026-06-04,DLVD
++DL-2044,SO-2044,1,2026-06-24,2026-06-24,2026-06-28,DLVD
++DL-2045,SO-2045,1,2026-06-12,2026-06-12,2026-06-16,DLVD
++DL-2046,SO-2046,1,2026-06-24,2026-06-24,2026-06-28,DLVD
++DL-2047,SO-2047,1,2026-05-27,2026-05-27,2026-05-31,DLVD
++DL-2048,SO-2048,1,2026-05-27,2026-05-27,2026-05-31,DLVD
++DL-2049,SO-2049,1,2026-06-13,2026-06-13,2026-06-17,DLVD
++DL-2050,SO-2050,1,2026-06-25,2026-06-25,2026-06-29,DLVD
++DL-2051,SO-2051,1,2026-06-24,2026-06-24,2026-06-28,DLVD
++DL-2052,SO-2052,1,2026-06-24,2026-06-24,2026-06-28,DLVD
++DL-2053,SO-2053,1,2026-05-28,2026-05-28,2026-06-01,DLVD
++DL-2054,SO-2054,1,2026-06-20,2026-06-20,2026-06-24,DLVD
++DL-2055,SO-2055,1,2026-06-15,2026-06-15,2026-06-19,DLVD
++DL-2056,SO-2056,1,2026-06-01,2026-06-01,2026-06-05,DLVD
++DL-2057,SO-2057,1,2026-06-01,2026-06-01,2026-06-05,DLVD
++DL-2058,SO-2058,1,2026-05-31,2026-05-31,2026-06-04,DLVD
++DL-2059,SO-2059,1,2026-06-10,2026-06-10,2026-06-14,DLVD
++DL-2060,SO-2060,1,2026-06-25,2026-06-25,2026-06-29,DLVD
++DL-2061,SO-2061,1,2026-06-06,2026-06-06,2026-06-10,DLVD
++DL-2062,SO-2062,1,2026-06-15,2026-06-15,2026-06-19,DLVD
++DL-2063,SO-2063,1,2026-06-10,2026-06-10,2026-06-14,DLVD
++DL-2064,SO-2064,1,2026-06-09,2026-06-09,2026-06-13,DLVD
++DL-2065,SO-2065,1,2026-06-02,2026-06-02,2026-06-06,DLVD
++DL-2066,SO-2066,1,2026-08-23,2026-08-23,,IN_TRANSIT
++DL-2067,SO-2067,1,2026-08-11,2026-08-11,,IN_TRANSIT
++DL-2068,SO-2068,1,2026-08-07,2026-08-07,,IN_TRANSIT
++DL-2071,SO-2071,1,2026-07-08,2026-07-08,2026-07-16,DLVD
++DL-2072,SO-2072,1,2026-07-26,2026-07-26,2026-08-03,DLVD
++DL-2073,SO-2073,1,2026-07-15,2026-07-15,2026-07-19,DLVD
++DL-2074,SO-2074,1,2026-07-17,2026-07-17,2026-07-21,DLVD
++DL-2075,SO-2075,1,2026-07-08,2026-07-08,2026-07-12,DLVD
++DL-2076,SO-2076,1,2026-07-25,2026-07-25,2026-07-29,DLVD
++DL-2077,SO-2077,1,2026-07-11,2026-07-11,2026-07-15,DLVD
++DL-2078,SO-2078,1,2026-07-10,2026-07-10,2026-07-14,DLVD
++DL-2079,SO-2079,1,2026-07-08,2026-07-08,2026-07-12,DLVD
++DL-2080,SO-2080,1,2026-07-01,2026-07-01,2026-07-05,DLVD
++DL-2081,SO-2081,1,2026-07-24,2026-07-24,2026-07-28,DLVD
++DL-2082,SO-2082,1,2026-07-07,2026-07-07,2026-07-11,DLVD
++DL-2083,SO-2083,1,2026-07-07,2026-07-07,2026-07-11,DLVD
++DL-2084,SO-2084,1,2026-07-05,2026-07-05,2026-07-09,DLVD
++DL-2085,SO-2085,1,2026-07-25,2026-07-25,2026-07-29,DLVD
++DL-2086,SO-2086,1,2026-07-25,2026-07-25,2026-07-29,DLVD
++DL-2087,SO-2087,1,2026-07-23,2026-07-23,2026-07-27,DLVD
++DL-2088,SO-2088,1,2026-07-11,2026-07-11,2026-07-15,DLVD
++DL-2089,SO-2089,1,2026-07-25,2026-07-25,2026-07-29,DLVD
++DL-2090,SO-2090,1,2026-07-05,2026-07-05,2026-07-09,DLVD
++DL-2091,SO-2091,1,2026-07-04,2026-07-04,2026-07-08,DLVD
++DL-2092,SO-2092,1,2026-07-15,2026-07-15,2026-07-19,DLVD
++DL-2093,SO-2093,1,2026-06-30,2026-06-30,2026-07-04,DLVD
++DL-2094,SO-2094,1,2026-07-02,2026-07-02,2026-07-06,DLVD
++DL-2095,SO-2095,1,2026-06-30,2026-06-30,2026-07-04,DLVD
++DL-2096,SO-2096,1,2026-06-30,2026-06-30,2026-07-04,DLVD
++DL-2097,SO-2097,1,2026-07-17,2026-07-17,2026-07-21,DLVD
++DL-2098,SO-2098,1,2026-06-03,2026-06-03,2026-06-11,DLVD
++DL-2099,SO-2099,1,2026-06-21,2026-06-21,2026-06-25,DLVD
++DL-2100,SO-2100,1,2026-06-07,2026-06-07,2026-06-11,DLVD
++DL-2101,SO-2101,1,2026-06-12,2026-06-12,2026-06-16,DLVD
++DL-2102,SO-2102,1,2026-06-12,2026-06-12,2026-06-16,DLVD
++DL-2103,SO-2103,1,2026-06-17,2026-06-17,2026-06-21,DLVD
++DL-2104,SO-2104,1,2026-06-14,2026-06-14,2026-06-18,DLVD
++DL-2105,SO-2105,1,2026-06-18,2026-06-18,2026-06-22,DLVD
++DL-2106,SO-2106,1,2026-06-06,2026-06-06,2026-06-10,DLVD
++DL-2107,SO-2107,1,2026-06-23,2026-06-23,2026-06-27,DLVD
++DL-2108,SO-2108,1,2026-06-17,2026-06-17,2026-06-21,DLVD
++DL-2109,SO-2109,1,2026-06-17,2026-06-17,2026-06-21,DLVD
++DL-2110,SO-2110,1,2026-06-19,2026-06-19,2026-06-23,DLVD
++DL-2111,SO-2111,1,2026-06-11,2026-06-11,2026-06-15,DLVD
++DL-2112,SO-2112,1,2026-06-07,2026-06-07,2026-06-11,DLVD
+diff --git a/data/generate.py b/data/generate.py
+new file mode 100644
+index 0000000..8d13567
+--- /dev/null
++++ b/data/generate.py
+@@ -0,0 +1,593 @@
++"""Deterministic sample-data generator. Fixed seed, no wall-clock, no network.
++
++Emits 6 SAP-shaped raw CSVs from data/seed_core.csv plus generated filler.
++Re-running produces byte-identical output.
++
++Target composition (spec section 5.1):
++  IN Jul 2026: 56 in window, 1 cancelled, 55 eligible, 48 on time, 7 late
++  IN Jun 2026: 27 in window, 1 cancelled, 26 eligible, 25 on time, 1 late
++  IN Aug 2026:  4 in window, all not-yet-due
++  US Jul 2026: 30 in window, 2 cancelled, 28 eligible, 26 on time, 2 late
++  US Jun 2026: 15 in window, 0 cancelled, 15 eligible, 14 on time, 1 late
++  Total: 132 orders
++"""
++import csv
++import random
++import sys
++from datetime import date, timedelta
++from pathlib import Path
++
++DATA_DIR = Path(__file__).resolve().parent
++sys.path.insert(0, str(DATA_DIR.parent))
++
++from src.semantic.constants import AS_OF_DATE
++
++RNG = random.Random(20260807)   # fixed seed -- never change
++
++# Standard phase durations (days), from metadata/04_process_model.yml
++STD = {
++    "mrp": 1, "release": 1, "issue": 1, "confirm": 3,
++    "qm": 1, "gr": 1, "picking": 1, "goods_issue": 0,
++    "shipment": 3, "delivery": 0, "invoice": 1,
++}
++
++def write_csv(name, fieldnames, rows):
++    """Deterministic CSV writing: LF endings, no platform variance."""
++    with open(DATA_DIR / name, "w", newline="", encoding="utf-8") as f:
++        w = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
++        w.writeheader()
++        w.writerows(rows)
++
++def load_seed():
++    """Load seed_core.csv and parse it into order dictionaries."""
++    with open(DATA_DIR / "seed_core.csv", newline="", encoding="utf-8") as f:
++        return list(csv.DictReader(f))
++
++def date_from_str(s):
++    """Parse YYYY-MM-DD string to date, or None if empty."""
++    if not s:
++        return None
++    return date.fromisoformat(s)
++
++def date_to_str(d):
++    """Convert date to YYYY-MM-DD string, or empty string if None."""
++    if d is None:
++        return ""
++    return d.isoformat()
++
++def generate_filler_order(order_id, region, promised_date, late=False, cancelled=False, not_yet_due=False):
++    """Generate a single filler order with derived timestamps."""
++    # Standard lead time: mrp(1) + release(1) + issue(1) + confirm(3) + qm(1) + gr(1) + picking(1) + goods_issue(0) + shipment_lead(1) + delivery(3) = 13 days
++    # To be on time, order_date should be at least 13 days before promised_date
++    order_date = promised_date - timedelta(days=14)  # 14 days to have margin
++
++    plant = "1010" if region == "IN" else "1710"
++    warehouse = f"WH-{region}-01"
++    carrier = RNG.choice(["BLUEDART", "FEDEX"])
++    customer_id = f"C-{region}-{RNG.randint(100, 999):03d}"
++
++    order_status = "CANC" if cancelled else "IN_TRANSIT" if not_yet_due else "DLVD"
++
++    # Generate production and delivery timeline
++    prod_order_id = order_id.replace("SO-", "PO-")
++    inspection_lot_id = order_id.replace("SO-", "QL-")
++
++    # Start from order_date and walk through phases
++    mrp_date = order_date + timedelta(days=STD["mrp"])
++    release_date = mrp_date + timedelta(days=STD["release"])
++    material_issue_date = release_date + timedelta(days=STD["issue"])
++    confirm_date = material_issue_date + timedelta(days=STD["confirm"])
++    qm_decision_date = confirm_date + timedelta(days=STD["qm"])
++    gr_date = qm_decision_date + timedelta(days=STD["gr"])
++    picking_date = gr_date + timedelta(days=STD["picking"])
++    goods_issue_date = picking_date + timedelta(days=STD["goods_issue"])
++    shipment_date = goods_issue_date + timedelta(days=1)
++
++    if late:
++        # Make it late by adding 4 days to delivery
++        delivery_date = shipment_date + timedelta(days=STD["shipment"] + 4)
++    else:
++        delivery_date = shipment_date + timedelta(days=STD["shipment"])
++
++    # For not-yet-due, delivery_date is empty
++    if not_yet_due:
++        delivery_date = None
++
++    # For cancelled, most dates are empty
++    if cancelled:
++        return {
++            "order_id": order_id,
++            "region": region,
++            "plant": plant,
++            "warehouse": warehouse,
++            "carrier": carrier,
++            "customer_id": customer_id,
++            "order_date": date_to_str(order_date),
++            "promised_delivery_date": date_to_str(promised_date),
++            "promised_date_original": "",
++            "order_status": order_status,
++            "production_order_id": prod_order_id,
++            "inspection_lot_id": "",
++            "rework": "N",
++            "split_delivery": "none",
++            "mrp_date": date_to_str(mrp_date),
++            "prod_release_date": date_to_str(release_date),
++            "material_issue_date": "",
++            "prod_confirm_date": "",
++            "qm_decision_date": "",
++            "gr_date": "",
++            "picking_date": "",
++            "goods_issue_date": "",
++            "shipment_date": "",
++            "final_delivery_date": "",
++            "invoice_date": "",
++            "expected_attribution_phase": "",
++        }
++
++    invoice_date = delivery_date + timedelta(days=STD["invoice"]) if delivery_date else None
++
++    return {
++        "order_id": order_id,
++        "region": region,
++        "plant": plant,
++        "warehouse": warehouse,
++        "carrier": carrier,
++        "customer_id": customer_id,
++        "order_date": date_to_str(order_date),
++        "promised_delivery_date": date_to_str(promised_date),
++        "promised_date_original": "",
++        "order_status": order_status,
++        "production_order_id": prod_order_id,
++        "inspection_lot_id": inspection_lot_id,
++        "rework": "N",
++        "split_delivery": "none",
++        "mrp_date": date_to_str(mrp_date),
++        "prod_release_date": date_to_str(release_date),
++        "material_issue_date": date_to_str(material_issue_date),
++        "prod_confirm_date": date_to_str(confirm_date),
++        "qm_decision_date": date_to_str(qm_decision_date),
++        "gr_date": date_to_str(gr_date),
++        "picking_date": date_to_str(picking_date),
++        "goods_issue_date": date_to_str(goods_issue_date),
++        "shipment_date": date_to_str(shipment_date),
++        "final_delivery_date": date_to_str(delivery_date),
++        "invoice_date": date_to_str(invoice_date),
++        "expected_attribution_phase": "",
++    }
++
++def generate_orders():
++    """Generate all 132 orders: 20 seed + 112 filler."""
++    seed = load_seed()
++    orders = list(seed)  # Start with seed orders
++
++    next_order_id = 2001
++
++    # IN Jul: need 39 filler (all on time)
++    for _ in range(39):
++        promised = date(2026, 7, RNG.randint(1, 31))
++        order = generate_filler_order(f"SO-{next_order_id}", "IN", promised, late=False, cancelled=False)
++        orders.append(order)
++        next_order_id += 1
++
++    # IN Jun: need 26 filler (25 on time + 1 cancelled)
++    for i in range(26):
++        promised = date(2026, 6, RNG.randint(1, 30))
++        cancelled = (i == 0)  # First one is cancelled
++        order = generate_filler_order(f"SO-{next_order_id}", "IN", promised, late=False, cancelled=cancelled)
++        orders.append(order)
++        next_order_id += 1
++
++    # IN Aug: need 3 filler (all not-yet-due, promised after AS_OF_DATE)
++    for _ in range(3):
++        promised = date(2026, 8, RNG.randint(8, 31))  # After 2026-08-07
++        order = generate_filler_order(f"SO-{next_order_id}", "IN", promised, late=False, cancelled=False, not_yet_due=True)
++        orders.append(order)
++        next_order_id += 1
++
++    # US Jul: need 29 filler (25 on time + 2 late + 2 cancelled)
++    for i in range(29):
++        promised = date(2026, 7, RNG.randint(1, 31))
++        if i < 2:
++            cancelled = True
++            late = False
++        elif i < 4:
++            cancelled = False
++            late = True
++        else:
++            cancelled = False
++            late = False
++        order = generate_filler_order(f"SO-{next_order_id}", "US", promised, late=late, cancelled=cancelled)
++        orders.append(order)
++        next_order_id += 1
++
++    # US Jun: need 15 filler (14 on time + 1 late)
++    for i in range(15):
++        promised = date(2026, 6, RNG.randint(1, 30))
++        late = (i == 0)  # First one is late
++        order = generate_filler_order(f"SO-{next_order_id}", "US", promised, late=late, cancelled=False)
++        orders.append(order)
++        next_order_id += 1
++
++    return orders
++
++def create_sales_orders(orders):
++    """Create sales_orders_raw.csv from order list."""
++    fieldnames = [
++        "order_id", "region", "plant", "warehouse", "carrier", "customer_id",
++        "order_date", "promised_delivery_date", "promised_date_original", "order_status"
++    ]
++    rows = []
++    for o in orders:
++        rows.append({
++            "order_id": o["order_id"],
++            "region": o["region"],
++            "plant": o["plant"],
++            "warehouse": o["warehouse"],
++            "carrier": o["carrier"],
++            "customer_id": o["customer_id"],
++            "order_date": o["order_date"],
++            "promised_delivery_date": o["promised_delivery_date"],
++            "promised_date_original": o["promised_date_original"],
++            "order_status": o["order_status"],
++        })
++    write_csv("sales_orders_raw.csv", fieldnames, rows)
++
++def create_production_orders(orders):
++    """Create production_orders_raw.csv."""
++    fieldnames = [
++        "production_order_id", "order_id", "plant", "mrp_date", "release_date",
++        "scheduled_finish_date", "material_issue_date", "confirm_date", "gr_date", "status"
++    ]
++    rows = []
++
++    # Identify IN July production orders for schedule adherence calculation
++    in_july_prod_orders = []
++    for o in orders:
++        if (o["region"] == "IN" and
++            o["promised_delivery_date"].startswith("2026-07") and
++            o["production_order_id"] and
++            o["order_status"] != "CANC"):
++            in_july_prod_orders.append(o)
++
++    # Need 50 out of 54 to meet schedule (4 late)
++    # PO-3005 is already late (production_execution), mark 3 more as late
++    late_indices = [5, 15, 25]  # Fixed indices for determinism
++
++    for o in orders:
++        if not o["production_order_id"]:
++            continue  # SO-1015 has no production order
++
++        # Calculate scheduled_finish_date
++        if o["prod_confirm_date"]:
++            confirm_date = date_from_str(o["prod_confirm_date"])
++            # For schedule adherence: set scheduled_finish_date
++            # On-time means: confirm_date <= scheduled_finish_date
++            if o in in_july_prod_orders:
++                idx = in_july_prod_orders.index(o)
++                if o["production_order_id"] == "PO-3005" or idx in late_indices:
++                    # Make it late: scheduled before actual confirm
++                    scheduled_finish = confirm_date - timedelta(days=1)
++                else:
++                    # On time: scheduled at or after confirm
++                    scheduled_finish = confirm_date + timedelta(days=1)
++            else:
++                # Default: slightly after confirm (on time)
++                scheduled_finish = confirm_date + timedelta(days=1)
++        else:
++            scheduled_finish = None
++
++        rows.append({
++            "production_order_id": o["production_order_id"],
++            "order_id": o["order_id"],
++            "plant": o["plant"],
++            "mrp_date": o["mrp_date"],
++            "release_date": o["prod_release_date"],
++            "scheduled_finish_date": date_to_str(scheduled_finish),
++            "material_issue_date": o["material_issue_date"],
++            "confirm_date": o["prod_confirm_date"],
++            "gr_date": o["gr_date"],
++            "status": o["order_status"],
++        })
++
++    write_csv("production_orders_raw.csv", fieldnames, rows)
++
++def create_inspection_lots(orders):
++    """Create inspection_lots_raw.csv with rework handling."""
++    fieldnames = [
++        "inspection_lot_id", "production_order_id", "decision_seq",
++        "decision_date", "usage_decision", "qty_inspected", "qty_accepted"
++    ]
++    rows = []
++
++    # Identify IN July lots for first-pass yield calculation
++    in_july_lots = []
++    for o in orders:
++        if (o["region"] == "IN" and
++            o["promised_delivery_date"].startswith("2026-07") and
++            o["inspection_lot_id"] and
++            o["order_status"] != "CANC"):
++            in_july_lots.append(o)
++
++    # Need 51 out of 54 to accept on first pass (3 reject/rework)
++    # QL-4004 is already rework, mark 2 more as reject
++    reject_indices = [10, 20]  # Fixed indices for determinism
++
++    for o in orders:
++        if not o["inspection_lot_id"]:
++            continue  # SO-1015 and cancelled orders have no inspection lot
++
++        # Handle QL-4004 rework case
++        if o["inspection_lot_id"] == "QL-4004":
++            rows.append({
++                "inspection_lot_id": "QL-4004",
++                "production_order_id": o["production_order_id"],
++                "decision_seq": "1",
++                "decision_date": "2026-07-11",
++                "usage_decision": "REWORK",
++                "qty_inspected": "100",
++                "qty_accepted": "0",
++            })
++            rows.append({
++                "inspection_lot_id": "QL-4004",
++                "production_order_id": o["production_order_id"],
++                "decision_seq": "2",
++                "decision_date": "2026-07-14",
++                "usage_decision": "ACCEPT",
++                "qty_inspected": "100",
++                "qty_accepted": "100",
++            })
++        else:
++            # Determine usage decision
++            if o in in_july_lots:
++                idx = in_july_lots.index(o)
++                if idx in reject_indices:
++                    usage_decision = "REJECT"
++                    qty_accepted = "0"
++                else:
++                    usage_decision = "ACCEPT"
++                    qty_accepted = "100"
++            else:
++                usage_decision = "ACCEPT"
++                qty_accepted = "100"
++
++            rows.append({
++                "inspection_lot_id": o["inspection_lot_id"],
++                "production_order_id": o["production_order_id"],
++                "decision_seq": "1",
++                "decision_date": o["qm_decision_date"],
++                "usage_decision": usage_decision,
++                "qty_inspected": "100",
++                "qty_accepted": qty_accepted,
++            })
++
++    write_csv("inspection_lots_raw.csv", fieldnames, rows)
++
++def create_goods_movements(orders):
++    """Create goods_movements_raw.csv."""
++    fieldnames = ["movement_id", "production_order_id", "movement_type", "posting_date"]
++    rows = []
++
++    movement_counter = 5001
++    for o in orders:
++        if not o["production_order_id"] or not o["material_issue_date"]:
++            continue  # No production or cancelled
++
++        rows.append({
++            "movement_id": f"GM-{movement_counter}",
++            "production_order_id": o["production_order_id"],
++            "movement_type": "261",  # Goods issue
++            "posting_date": o["material_issue_date"],
++        })
++        movement_counter += 1
++
++        if o["gr_date"]:
++            rows.append({
++                "movement_id": f"GM-{movement_counter}",
++                "production_order_id": o["production_order_id"],
++                "movement_type": "101",  # Goods receipt
++                "posting_date": o["gr_date"],
++            })
++            movement_counter += 1
++
++    write_csv("goods_movements_raw.csv", fieldnames, rows)
++
++def create_deliveries(orders):
++    """Create deliveries_raw.csv with split delivery handling."""
++    fieldnames = [
++        "delivery_id", "order_id", "delivery_leg", "picking_date",
++        "goods_issue_date", "delivery_date", "delivery_status"
++    ]
++    rows = []
++
++    for o in orders:
++        if o["order_status"] == "CANC":
++            continue  # Cancelled orders have no delivery
++
++        # Handle split deliveries
++        if o["split_delivery"] in ["on_time", "mixed"]:
++            # Two legs
++            delivery_id_a = o["order_id"].replace("SO-", "DL-") + "A"
++            delivery_id_b = o["order_id"].replace("SO-", "DL-") + "B"
++
++            if o["order_id"] == "SO-1009":
++                # Mixed case: leg A on time (2026-07-16), leg B late (2026-07-20)
++                rows.append({
++                    "delivery_id": delivery_id_a,
++                    "order_id": o["order_id"],
++                    "delivery_leg": "1",
++                    "picking_date": o["picking_date"],
++                    "goods_issue_date": o["goods_issue_date"],
++                    "delivery_date": "2026-07-16",
++                    "delivery_status": "DLVD",
++                })
++                rows.append({
++                    "delivery_id": delivery_id_b,
++                    "order_id": o["order_id"],
++                    "delivery_leg": "2",
++                    "picking_date": o["picking_date"],
++                    "goods_issue_date": o["goods_issue_date"],
++                    "delivery_date": "2026-07-20",
++                    "delivery_status": "DLVD",
++                })
++            else:
++                # Both legs on time
++                rows.append({
++                    "delivery_id": delivery_id_a,
++                    "order_id": o["order_id"],
++                    "delivery_leg": "1",
++                    "picking_date": o["picking_date"],
++                    "goods_issue_date": o["goods_issue_date"],
++                    "delivery_date": o["final_delivery_date"],
++                    "delivery_status": o["order_status"],
++                })
++                rows.append({
++                    "delivery_id": delivery_id_b,
++                    "order_id": o["order_id"],
++                    "delivery_leg": "2",
++                    "picking_date": o["picking_date"],
++                    "goods_issue_date": o["goods_issue_date"],
++                    "delivery_date": o["final_delivery_date"],
++                    "delivery_status": o["order_status"],
++                })
++        else:
++            # Single delivery
++            delivery_id = o["order_id"].replace("SO-", "DL-")
++            rows.append({
++                "delivery_id": delivery_id,
++                "order_id": o["order_id"],
++                "delivery_leg": "1",
++                "picking_date": o["picking_date"],
++                "goods_issue_date": o["goods_issue_date"],
++                "delivery_date": o["final_delivery_date"],
++                "delivery_status": o["order_status"],
++            })
++
++    write_csv("deliveries_raw.csv", fieldnames, rows)
++
++def create_shipments(orders):
++    """Create shipments_raw.csv."""
++    fieldnames = [
++        "shipment_id", "delivery_id", "carrier", "dispatch_date",
++        "delivery_date", "delivery_status"
++    ]
++    rows = []
++
++    for o in orders:
++        if o["order_status"] == "CANC":
++            continue
++
++        # Handle split deliveries
++        if o["split_delivery"] in ["on_time", "mixed"]:
++            delivery_id_a = o["order_id"].replace("SO-", "DL-") + "A"
++            delivery_id_b = o["order_id"].replace("SO-", "DL-") + "B"
++            shipment_id_a = o["order_id"].replace("SO-", "SH-") + "A"
++            shipment_id_b = o["order_id"].replace("SO-", "SH-") + "B"
++
++            if o["order_id"] == "SO-1009":
++                rows.append({
++                    "shipment_id": shipment_id_a,
++                    "delivery_id": delivery_id_a,
++                    "carrier": o["carrier"],
++                    "dispatch_date": o["shipment_date"],
++                    "delivery_date": "2026-07-16",
++                    "delivery_status": "DLVD",
++                })
++                rows.append({
++                    "shipment_id": shipment_id_b,
++                    "delivery_id": delivery_id_b,
++                    "carrier": o["carrier"],
++                    "dispatch_date": o["shipment_date"],
++                    "delivery_date": "2026-07-20",
++                    "delivery_status": "DLVD",
++                })
++            else:
++                rows.append({
++                    "shipment_id": shipment_id_a,
++                    "delivery_id": delivery_id_a,
++                    "carrier": o["carrier"],
++                    "dispatch_date": o["shipment_date"],
++                    "delivery_date": o["final_delivery_date"],
++                    "delivery_status": o["order_status"],
++                })
++                rows.append({
++                    "shipment_id": shipment_id_b,
++                    "delivery_id": delivery_id_b,
++                    "carrier": o["carrier"],
++                    "dispatch_date": o["shipment_date"],
++                    "delivery_date": o["final_delivery_date"],
++                    "delivery_status": o["order_status"],
++                })
++        else:
++            delivery_id = o["order_id"].replace("SO-", "DL-")
++            shipment_id = o["order_id"].replace("SO-", "SH-")
++            rows.append({
++                "shipment_id": shipment_id,
++                "delivery_id": delivery_id,
++                "carrier": o["carrier"],
++                "dispatch_date": o["shipment_date"],
++                "delivery_date": o["final_delivery_date"],
++                "delivery_status": o["order_status"],
++            })
++
++    write_csv("shipments_raw.csv", fieldnames, rows)
++
++def main():
++    """Generate all raw CSV files."""
++    print("Generating orders...")
++    orders = generate_orders()
++
++    # Verify composition before writing
++    print("Verifying window composition...")
++
++    # IN Jul
++    in_jul = [o for o in orders if o["region"] == "IN" and o["promised_delivery_date"].startswith("2026-07")]
++    in_jul_canc = [o for o in in_jul if o["order_status"] == "CANC"]
++    in_jul_eligible = [o for o in in_jul if o["order_status"] != "CANC"]
++    in_jul_on_time = [o for o in in_jul_eligible if o["final_delivery_date"] and o["final_delivery_date"] <= o["promised_delivery_date"]]
++
++    assert len(in_jul) == 56, f"IN Jul total: expected 56, got {len(in_jul)}"
++    assert len(in_jul_canc) == 1, f"IN Jul cancelled: expected 1, got {len(in_jul_canc)}"
++    assert len(in_jul_eligible) == 55, f"IN Jul eligible: expected 55, got {len(in_jul_eligible)}"
++    assert len(in_jul_on_time) == 48, f"IN Jul on time: expected 48, got {len(in_jul_on_time)}"
++
++    # IN Jun
++    in_jun = [o for o in orders if o["region"] == "IN" and o["promised_delivery_date"].startswith("2026-06")]
++    in_jun_canc = [o for o in in_jun if o["order_status"] == "CANC"]
++
++    assert len(in_jun) == 27, f"IN Jun total: expected 27, got {len(in_jun)}"
++    assert len(in_jun_canc) == 1, f"IN Jun cancelled: expected 1, got {len(in_jun_canc)}"
++
++    # IN Aug
++    in_aug = [o for o in orders if o["region"] == "IN" and o["promised_delivery_date"].startswith("2026-08")]
++
++    assert len(in_aug) == 4, f"IN Aug total: expected 4, got {len(in_aug)}"
++    for o in in_aug:
++        assert o["promised_delivery_date"] > "2026-08-07", f"IN Aug order {o['order_id']} not after AS_OF_DATE"
++
++    # US Jul
++    us_jul = [o for o in orders if o["region"] == "US" and o["promised_delivery_date"].startswith("2026-07")]
++    us_jul_canc = [o for o in us_jul if o["order_status"] == "CANC"]
++
++    assert len(us_jul) == 30, f"US Jul total: expected 30, got {len(us_jul)}"
++    assert len(us_jul_canc) == 2, f"US Jul cancelled: expected 2, got {len(us_jul_canc)}"
++
++    # US Jun
++    us_jun = [o for o in orders if o["region"] == "US" and o["promised_delivery_date"].startswith("2026-06")]
++
++    assert len(us_jun) == 15, f"US Jun total: expected 15, got {len(us_jun)}"
++
++    # Total
++    assert len(orders) == 132, f"Total orders: expected 132, got {len(orders)}"
++
++    print("Creating CSVs...")
++    create_sales_orders(orders)
++    create_production_orders(orders)
++    create_inspection_lots(orders)
++    create_goods_movements(orders)
++    create_deliveries(orders)
++    create_shipments(orders)
++
++    print("Done. 6 raw CSV files generated.")
++
++if __name__ == "__main__":
++    main()
+diff --git a/data/goods_movements_raw.csv b/data/goods_movements_raw.csv
+new file mode 100644
+index 0000000..777e3cb
+--- /dev/null
++++ b/data/goods_movements_raw.csv
+@@ -0,0 +1,255 @@
++movement_id,production_order_id,movement_type,posting_date
++GM-5001,PO-3001,261,2026-07-04
++GM-5002,PO-3001,101,2026-07-09
++GM-5003,PO-3002,261,2026-07-04
++GM-5004,PO-3002,101,2026-07-13
++GM-5005,PO-3003,261,2026-07-05
++GM-5006,PO-3003,101,2026-07-10
++GM-5007,PO-3004,261,2026-07-05
++GM-5008,PO-3004,101,2026-07-15
++GM-5009,PO-3005,261,2026-07-06
++GM-5010,PO-3005,101,2026-07-15
++GM-5011,PO-3006,261,2026-07-06
++GM-5012,PO-3006,101,2026-07-16
++GM-5013,PO-3008,261,2026-07-07
++GM-5014,PO-3008,101,2026-07-12
++GM-5015,PO-3009,261,2026-07-08
++GM-5016,PO-3009,101,2026-07-13
++GM-5017,PO-3010,261,2026-07-09
++GM-5018,PO-3010,101,2026-07-19
++GM-5019,PO-3011,261,2026-07-09
++GM-5020,PO-3011,101,2026-07-14
++GM-5021,PO-3012,261,2026-07-10
++GM-5022,PO-3012,101,2026-07-15
++GM-5023,PO-3013,261,2026-07-31
++GM-5024,PO-3013,101,2026-08-05
++GM-5025,PO-3014,261,2026-07-11
++GM-5026,PO-3014,101,2026-07-16
++GM-5027,PO-3016,261,2026-07-13
++GM-5028,PO-3016,101,2026-07-18
++GM-5029,PO-3017,261,2026-07-14
++GM-5030,PO-3017,101,2026-07-19
++GM-5031,PO-3018,261,2026-07-15
++GM-5032,PO-3018,101,2026-07-20
++GM-5033,PO-3019,261,2026-06-04
++GM-5034,PO-3019,101,2026-06-09
++GM-5035,PO-3020,261,2026-07-04
++GM-5036,PO-3020,101,2026-07-09
++GM-5037,PO-2001,261,2026-06-21
++GM-5038,PO-2001,101,2026-06-26
++GM-5039,PO-2002,261,2026-07-19
++GM-5040,PO-2002,101,2026-07-24
++GM-5041,PO-2003,261,2026-06-21
++GM-5042,PO-2003,101,2026-06-26
++GM-5043,PO-2004,261,2026-07-16
++GM-5044,PO-2004,101,2026-07-21
++GM-5045,PO-2005,261,2026-07-05
++GM-5046,PO-2005,101,2026-07-10
++GM-5047,PO-2006,261,2026-07-18
++GM-5048,PO-2006,101,2026-07-23
++GM-5049,PO-2007,261,2026-07-19
++GM-5050,PO-2007,101,2026-07-24
++GM-5051,PO-2008,261,2026-06-27
++GM-5052,PO-2008,101,2026-07-02
++GM-5053,PO-2009,261,2026-07-19
++GM-5054,PO-2009,101,2026-07-24
++GM-5055,PO-2010,261,2026-06-21
++GM-5056,PO-2010,101,2026-06-26
++GM-5057,PO-2011,261,2026-07-07
++GM-5058,PO-2011,101,2026-07-12
++GM-5059,PO-2012,261,2026-06-23
++GM-5060,PO-2012,101,2026-06-28
++GM-5061,PO-2013,261,2026-07-17
++GM-5062,PO-2013,101,2026-07-22
++GM-5063,PO-2014,261,2026-07-13
++GM-5064,PO-2014,101,2026-07-18
++GM-5065,PO-2015,261,2026-07-04
++GM-5066,PO-2015,101,2026-07-09
++GM-5067,PO-2016,261,2026-06-26
++GM-5068,PO-2016,101,2026-07-01
++GM-5069,PO-2017,261,2026-07-18
++GM-5070,PO-2017,101,2026-07-23
++GM-5071,PO-2018,261,2026-07-20
++GM-5072,PO-2018,101,2026-07-25
++GM-5073,PO-2019,261,2026-06-30
++GM-5074,PO-2019,101,2026-07-05
++GM-5075,PO-2020,261,2026-06-25
++GM-5076,PO-2020,101,2026-06-30
++GM-5077,PO-2021,261,2026-07-12
++GM-5078,PO-2021,101,2026-07-17
++GM-5079,PO-2022,261,2026-07-11
++GM-5080,PO-2022,101,2026-07-16
++GM-5081,PO-2023,261,2026-07-13
++GM-5082,PO-2023,101,2026-07-18
++GM-5083,PO-2024,261,2026-06-28
++GM-5084,PO-2024,101,2026-07-03
++GM-5085,PO-2025,261,2026-07-16
++GM-5086,PO-2025,101,2026-07-21
++GM-5087,PO-2026,261,2026-07-14
++GM-5088,PO-2026,101,2026-07-19
++GM-5089,PO-2027,261,2026-06-24
++GM-5090,PO-2027,101,2026-06-29
++GM-5091,PO-2028,261,2026-07-16
++GM-5092,PO-2028,101,2026-07-21
++GM-5093,PO-2029,261,2026-07-14
++GM-5094,PO-2029,101,2026-07-19
++GM-5095,PO-2030,261,2026-06-28
++GM-5096,PO-2030,101,2026-07-03
++GM-5097,PO-2031,261,2026-06-26
++GM-5098,PO-2031,101,2026-07-01
++GM-5099,PO-2032,261,2026-06-27
++GM-5100,PO-2032,101,2026-07-02
++GM-5101,PO-2033,261,2026-07-19
++GM-5102,PO-2033,101,2026-07-24
++GM-5103,PO-2034,261,2026-06-23
++GM-5104,PO-2034,101,2026-06-28
++GM-5105,PO-2035,261,2026-06-28
++GM-5106,PO-2035,101,2026-07-03
++GM-5107,PO-2036,261,2026-07-06
++GM-5108,PO-2036,101,2026-07-11
++GM-5109,PO-2037,261,2026-07-13
++GM-5110,PO-2037,101,2026-07-18
++GM-5111,PO-2038,261,2026-07-19
++GM-5112,PO-2038,101,2026-07-24
++GM-5113,PO-2039,261,2026-07-14
++GM-5114,PO-2039,101,2026-07-19
++GM-5115,PO-2041,261,2026-05-28
++GM-5116,PO-2041,101,2026-06-02
++GM-5117,PO-2042,261,2026-06-13
++GM-5118,PO-2042,101,2026-06-18
++GM-5119,PO-2043,261,2026-05-25
++GM-5120,PO-2043,101,2026-05-30
++GM-5121,PO-2044,261,2026-06-18
++GM-5122,PO-2044,101,2026-06-23
++GM-5123,PO-2045,261,2026-06-06
++GM-5124,PO-2045,101,2026-06-11
++GM-5125,PO-2046,261,2026-06-18
++GM-5126,PO-2046,101,2026-06-23
++GM-5127,PO-2047,261,2026-05-21
++GM-5128,PO-2047,101,2026-05-26
++GM-5129,PO-2048,261,2026-05-21
++GM-5130,PO-2048,101,2026-05-26
++GM-5131,PO-2049,261,2026-06-07
++GM-5132,PO-2049,101,2026-06-12
++GM-5133,PO-2050,261,2026-06-19
++GM-5134,PO-2050,101,2026-06-24
++GM-5135,PO-2051,261,2026-06-18
++GM-5136,PO-2051,101,2026-06-23
++GM-5137,PO-2052,261,2026-06-18
++GM-5138,PO-2052,101,2026-06-23
++GM-5139,PO-2053,261,2026-05-22
++GM-5140,PO-2053,101,2026-05-27
++GM-5141,PO-2054,261,2026-06-14
++GM-5142,PO-2054,101,2026-06-19
++GM-5143,PO-2055,261,2026-06-09
++GM-5144,PO-2055,101,2026-06-14
++GM-5145,PO-2056,261,2026-05-26
++GM-5146,PO-2056,101,2026-05-31
++GM-5147,PO-2057,261,2026-05-26
++GM-5148,PO-2057,101,2026-05-31
++GM-5149,PO-2058,261,2026-05-25
++GM-5150,PO-2058,101,2026-05-30
++GM-5151,PO-2059,261,2026-06-04
++GM-5152,PO-2059,101,2026-06-09
++GM-5153,PO-2060,261,2026-06-19
++GM-5154,PO-2060,101,2026-06-24
++GM-5155,PO-2061,261,2026-05-31
++GM-5156,PO-2061,101,2026-06-05
++GM-5157,PO-2062,261,2026-06-09
++GM-5158,PO-2062,101,2026-06-14
++GM-5159,PO-2063,261,2026-06-04
++GM-5160,PO-2063,101,2026-06-09
++GM-5161,PO-2064,261,2026-06-03
++GM-5162,PO-2064,101,2026-06-08
++GM-5163,PO-2065,261,2026-05-27
++GM-5164,PO-2065,101,2026-06-01
++GM-5165,PO-2066,261,2026-08-17
++GM-5166,PO-2066,101,2026-08-22
++GM-5167,PO-2067,261,2026-08-05
++GM-5168,PO-2067,101,2026-08-10
++GM-5169,PO-2068,261,2026-08-01
++GM-5170,PO-2068,101,2026-08-06
++GM-5171,PO-2071,261,2026-07-02
++GM-5172,PO-2071,101,2026-07-07
++GM-5173,PO-2072,261,2026-07-20
++GM-5174,PO-2072,101,2026-07-25
++GM-5175,PO-2073,261,2026-07-09
++GM-5176,PO-2073,101,2026-07-14
++GM-5177,PO-2074,261,2026-07-11
++GM-5178,PO-2074,101,2026-07-16
++GM-5179,PO-2075,261,2026-07-02
++GM-5180,PO-2075,101,2026-07-07
++GM-5181,PO-2076,261,2026-07-19
++GM-5182,PO-2076,101,2026-07-24
++GM-5183,PO-2077,261,2026-07-05
++GM-5184,PO-2077,101,2026-07-10
++GM-5185,PO-2078,261,2026-07-04
++GM-5186,PO-2078,101,2026-07-09
++GM-5187,PO-2079,261,2026-07-02
++GM-5188,PO-2079,101,2026-07-07
++GM-5189,PO-2080,261,2026-06-25
++GM-5190,PO-2080,101,2026-06-30
++GM-5191,PO-2081,261,2026-07-18
++GM-5192,PO-2081,101,2026-07-23
++GM-5193,PO-2082,261,2026-07-01
++GM-5194,PO-2082,101,2026-07-06
++GM-5195,PO-2083,261,2026-07-01
++GM-5196,PO-2083,101,2026-07-06
++GM-5197,PO-2084,261,2026-06-29
++GM-5198,PO-2084,101,2026-07-04
++GM-5199,PO-2085,261,2026-07-19
++GM-5200,PO-2085,101,2026-07-24
++GM-5201,PO-2086,261,2026-07-19
++GM-5202,PO-2086,101,2026-07-24
++GM-5203,PO-2087,261,2026-07-17
++GM-5204,PO-2087,101,2026-07-22
++GM-5205,PO-2088,261,2026-07-05
++GM-5206,PO-2088,101,2026-07-10
++GM-5207,PO-2089,261,2026-07-19
++GM-5208,PO-2089,101,2026-07-24
++GM-5209,PO-2090,261,2026-06-29
++GM-5210,PO-2090,101,2026-07-04
++GM-5211,PO-2091,261,2026-06-28
++GM-5212,PO-2091,101,2026-07-03
++GM-5213,PO-2092,261,2026-07-09
++GM-5214,PO-2092,101,2026-07-14
++GM-5215,PO-2093,261,2026-06-24
++GM-5216,PO-2093,101,2026-06-29
++GM-5217,PO-2094,261,2026-06-26
++GM-5218,PO-2094,101,2026-07-01
++GM-5219,PO-2095,261,2026-06-24
++GM-5220,PO-2095,101,2026-06-29
++GM-5221,PO-2096,261,2026-06-24
++GM-5222,PO-2096,101,2026-06-29
++GM-5223,PO-2097,261,2026-07-11
++GM-5224,PO-2097,101,2026-07-16
++GM-5225,PO-2098,261,2026-05-28
++GM-5226,PO-2098,101,2026-06-02
++GM-5227,PO-2099,261,2026-06-15
++GM-5228,PO-2099,101,2026-06-20
++GM-5229,PO-2100,261,2026-06-01
++GM-5230,PO-2100,101,2026-06-06
++GM-5231,PO-2101,261,2026-06-06
++GM-5232,PO-2101,101,2026-06-11
++GM-5233,PO-2102,261,2026-06-06
++GM-5234,PO-2102,101,2026-06-11
++GM-5235,PO-2103,261,2026-06-11
++GM-5236,PO-2103,101,2026-06-16
++GM-5237,PO-2104,261,2026-06-08
++GM-5238,PO-2104,101,2026-06-13
++GM-5239,PO-2105,261,2026-06-12
++GM-5240,PO-2105,101,2026-06-17
++GM-5241,PO-2106,261,2026-05-31
++GM-5242,PO-2106,101,2026-06-05
++GM-5243,PO-2107,261,2026-06-17
++GM-5244,PO-2107,101,2026-06-22
++GM-5245,PO-2108,261,2026-06-11
++GM-5246,PO-2108,101,2026-06-16
++GM-5247,PO-2109,261,2026-06-11
++GM-5248,PO-2109,101,2026-06-16
++GM-5249,PO-2110,261,2026-06-13
++GM-5250,PO-2110,101,2026-06-18
++GM-5251,PO-2111,261,2026-06-05
++GM-5252,PO-2111,101,2026-06-10
++GM-5253,PO-2112,261,2026-06-01
++GM-5254,PO-2112,101,2026-06-06
+diff --git a/data/inspection_lots_raw.csv b/data/inspection_lots_raw.csv
+new file mode 100644
+index 0000000..1701ea1
+--- /dev/null
++++ b/data/inspection_lots_raw.csv
+@@ -0,0 +1,129 @@
++inspection_lot_id,production_order_id,decision_seq,decision_date,usage_decision,qty_inspected,qty_accepted
++QL-4001,PO-3001,1,2026-07-08,ACCEPT,100,100
++QL-4002,PO-3002,1,2026-07-12,ACCEPT,100,100
++QL-4003,PO-3003,1,2026-07-09,ACCEPT,100,100
++QL-4004,PO-3004,1,2026-07-11,REWORK,100,0
++QL-4004,PO-3004,2,2026-07-14,ACCEPT,100,100
++QL-4005,PO-3005,1,2026-07-14,ACCEPT,100,100
++QL-4006,PO-3006,1,2026-07-15,ACCEPT,100,100
++QL-4008,PO-3008,1,2026-07-11,ACCEPT,100,100
++QL-4009,PO-3009,1,2026-07-12,ACCEPT,100,100
++QL-4010,PO-3010,1,2026-07-18,ACCEPT,100,100
++QL-4011,PO-3011,1,2026-07-13,ACCEPT,100,100
++QL-4012,PO-3012,1,2026-07-14,REJECT,100,0
++QL-4013,PO-3013,1,2026-08-04,ACCEPT,100,100
++QL-4014,PO-3014,1,2026-07-15,ACCEPT,100,100
++QL-4016,PO-3016,1,2026-07-17,ACCEPT,100,100
++QL-4017,PO-3017,1,2026-07-18,ACCEPT,100,100
++QL-4018,PO-3018,1,2026-07-19,ACCEPT,100,100
++QL-4019,PO-3019,1,2026-06-08,ACCEPT,100,100
++QL-4020,PO-3020,1,2026-07-08,ACCEPT,100,100
++QL-2001,PO-2001,1,2026-06-25,ACCEPT,100,100
++QL-2002,PO-2002,1,2026-07-23,ACCEPT,100,100
++QL-2003,PO-2003,1,2026-06-25,ACCEPT,100,100
++QL-2004,PO-2004,1,2026-07-20,ACCEPT,100,100
++QL-2005,PO-2005,1,2026-07-09,ACCEPT,100,100
++QL-2006,PO-2006,1,2026-07-22,REJECT,100,0
++QL-2007,PO-2007,1,2026-07-23,ACCEPT,100,100
++QL-2008,PO-2008,1,2026-07-01,ACCEPT,100,100
++QL-2009,PO-2009,1,2026-07-23,ACCEPT,100,100
++QL-2010,PO-2010,1,2026-06-25,ACCEPT,100,100
++QL-2011,PO-2011,1,2026-07-11,ACCEPT,100,100
++QL-2012,PO-2012,1,2026-06-27,ACCEPT,100,100
++QL-2013,PO-2013,1,2026-07-21,ACCEPT,100,100
++QL-2014,PO-2014,1,2026-07-17,ACCEPT,100,100
++QL-2015,PO-2015,1,2026-07-08,ACCEPT,100,100
++QL-2016,PO-2016,1,2026-06-30,ACCEPT,100,100
++QL-2017,PO-2017,1,2026-07-22,ACCEPT,100,100
++QL-2018,PO-2018,1,2026-07-24,ACCEPT,100,100
++QL-2019,PO-2019,1,2026-07-04,ACCEPT,100,100
++QL-2020,PO-2020,1,2026-06-29,ACCEPT,100,100
++QL-2021,PO-2021,1,2026-07-16,ACCEPT,100,100
++QL-2022,PO-2022,1,2026-07-15,ACCEPT,100,100
++QL-2023,PO-2023,1,2026-07-17,ACCEPT,100,100
++QL-2024,PO-2024,1,2026-07-02,ACCEPT,100,100
++QL-2025,PO-2025,1,2026-07-20,ACCEPT,100,100
++QL-2026,PO-2026,1,2026-07-18,ACCEPT,100,100
++QL-2027,PO-2027,1,2026-06-28,ACCEPT,100,100
++QL-2028,PO-2028,1,2026-07-20,ACCEPT,100,100
++QL-2029,PO-2029,1,2026-07-18,ACCEPT,100,100
++QL-2030,PO-2030,1,2026-07-02,ACCEPT,100,100
++QL-2031,PO-2031,1,2026-06-30,ACCEPT,100,100
++QL-2032,PO-2032,1,2026-07-01,ACCEPT,100,100
++QL-2033,PO-2033,1,2026-07-23,ACCEPT,100,100
++QL-2034,PO-2034,1,2026-06-27,ACCEPT,100,100
++QL-2035,PO-2035,1,2026-07-02,ACCEPT,100,100
++QL-2036,PO-2036,1,2026-07-10,ACCEPT,100,100
++QL-2037,PO-2037,1,2026-07-17,ACCEPT,100,100
++QL-2038,PO-2038,1,2026-07-23,ACCEPT,100,100
++QL-2039,PO-2039,1,2026-07-18,ACCEPT,100,100
++QL-2041,PO-2041,1,2026-06-01,ACCEPT,100,100
++QL-2042,PO-2042,1,2026-06-17,ACCEPT,100,100
++QL-2043,PO-2043,1,2026-05-29,ACCEPT,100,100
++QL-2044,PO-2044,1,2026-06-22,ACCEPT,100,100
++QL-2045,PO-2045,1,2026-06-10,ACCEPT,100,100
++QL-2046,PO-2046,1,2026-06-22,ACCEPT,100,100
++QL-2047,PO-2047,1,2026-05-25,ACCEPT,100,100
++QL-2048,PO-2048,1,2026-05-25,ACCEPT,100,100
++QL-2049,PO-2049,1,2026-06-11,ACCEPT,100,100
++QL-2050,PO-2050,1,2026-06-23,ACCEPT,100,100
++QL-2051,PO-2051,1,2026-06-22,ACCEPT,100,100
++QL-2052,PO-2052,1,2026-06-22,ACCEPT,100,100
++QL-2053,PO-2053,1,2026-05-26,ACCEPT,100,100
++QL-2054,PO-2054,1,2026-06-18,ACCEPT,100,100
++QL-2055,PO-2055,1,2026-06-13,ACCEPT,100,100
++QL-2056,PO-2056,1,2026-05-30,ACCEPT,100,100
++QL-2057,PO-2057,1,2026-05-30,ACCEPT,100,100
++QL-2058,PO-2058,1,2026-05-29,ACCEPT,100,100
++QL-2059,PO-2059,1,2026-06-08,ACCEPT,100,100
++QL-2060,PO-2060,1,2026-06-23,ACCEPT,100,100
++QL-2061,PO-2061,1,2026-06-04,ACCEPT,100,100
++QL-2062,PO-2062,1,2026-06-13,ACCEPT,100,100
++QL-2063,PO-2063,1,2026-06-08,ACCEPT,100,100
++QL-2064,PO-2064,1,2026-06-07,ACCEPT,100,100
++QL-2065,PO-2065,1,2026-05-31,ACCEPT,100,100
++QL-2066,PO-2066,1,2026-08-21,ACCEPT,100,100
++QL-2067,PO-2067,1,2026-08-09,ACCEPT,100,100
++QL-2068,PO-2068,1,2026-08-05,ACCEPT,100,100
++QL-2071,PO-2071,1,2026-07-06,ACCEPT,100,100
++QL-2072,PO-2072,1,2026-07-24,ACCEPT,100,100
++QL-2073,PO-2073,1,2026-07-13,ACCEPT,100,100
++QL-2074,PO-2074,1,2026-07-15,ACCEPT,100,100
++QL-2075,PO-2075,1,2026-07-06,ACCEPT,100,100
++QL-2076,PO-2076,1,2026-07-23,ACCEPT,100,100
++QL-2077,PO-2077,1,2026-07-09,ACCEPT,100,100
++QL-2078,PO-2078,1,2026-07-08,ACCEPT,100,100
++QL-2079,PO-2079,1,2026-07-06,ACCEPT,100,100
++QL-2080,PO-2080,1,2026-06-29,ACCEPT,100,100
++QL-2081,PO-2081,1,2026-07-22,ACCEPT,100,100
++QL-2082,PO-2082,1,2026-07-05,ACCEPT,100,100
++QL-2083,PO-2083,1,2026-07-05,ACCEPT,100,100
++QL-2084,PO-2084,1,2026-07-03,ACCEPT,100,100
++QL-2085,PO-2085,1,2026-07-23,ACCEPT,100,100
++QL-2086,PO-2086,1,2026-07-23,ACCEPT,100,100
++QL-2087,PO-2087,1,2026-07-21,ACCEPT,100,100
++QL-2088,PO-2088,1,2026-07-09,ACCEPT,100,100
++QL-2089,PO-2089,1,2026-07-23,ACCEPT,100,100
++QL-2090,PO-2090,1,2026-07-03,ACCEPT,100,100
++QL-2091,PO-2091,1,2026-07-02,ACCEPT,100,100
++QL-2092,PO-2092,1,2026-07-13,ACCEPT,100,100
++QL-2093,PO-2093,1,2026-06-28,ACCEPT,100,100
++QL-2094,PO-2094,1,2026-06-30,ACCEPT,100,100
++QL-2095,PO-2095,1,2026-06-28,ACCEPT,100,100
++QL-2096,PO-2096,1,2026-06-28,ACCEPT,100,100
++QL-2097,PO-2097,1,2026-07-15,ACCEPT,100,100
++QL-2098,PO-2098,1,2026-06-01,ACCEPT,100,100
++QL-2099,PO-2099,1,2026-06-19,ACCEPT,100,100
++QL-2100,PO-2100,1,2026-06-05,ACCEPT,100,100
++QL-2101,PO-2101,1,2026-06-10,ACCEPT,100,100
++QL-2102,PO-2102,1,2026-06-10,ACCEPT,100,100
++QL-2103,PO-2103,1,2026-06-15,ACCEPT,100,100
++QL-2104,PO-2104,1,2026-06-12,ACCEPT,100,100
++QL-2105,PO-2105,1,2026-06-16,ACCEPT,100,100
++QL-2106,PO-2106,1,2026-06-04,ACCEPT,100,100
++QL-2107,PO-2107,1,2026-06-21,ACCEPT,100,100
++QL-2108,PO-2108,1,2026-06-15,ACCEPT,100,100
++QL-2109,PO-2109,1,2026-06-15,ACCEPT,100,100
++QL-2110,PO-2110,1,2026-06-17,ACCEPT,100,100
++QL-2111,PO-2111,1,2026-06-09,ACCEPT,100,100
++QL-2112,PO-2112,1,2026-06-05,ACCEPT,100,100
+diff --git a/data/production_orders_raw.csv b/data/production_orders_raw.csv
+new file mode 100644
+index 0000000..a9a1081
+--- /dev/null
++++ b/data/production_orders_raw.csv
+@@ -0,0 +1,132 @@
++production_order_id,order_id,plant,mrp_date,release_date,scheduled_finish_date,material_issue_date,confirm_date,gr_date,status
++PO-3001,SO-1001,1010,2026-07-02,2026-07-03,2026-07-08,2026-07-04,2026-07-07,2026-07-09,DLVD
++PO-3002,SO-1002,1010,2026-07-02,2026-07-03,2026-07-08,2026-07-04,2026-07-07,2026-07-13,DLVD
++PO-3003,SO-1003,1010,2026-07-03,2026-07-04,2026-07-09,2026-07-05,2026-07-08,2026-07-10,DLVD
++PO-3004,SO-1004,1010,2026-07-03,2026-07-04,2026-07-09,2026-07-05,2026-07-08,2026-07-15,DLVD
++PO-3005,SO-1005,1010,2026-07-04,2026-07-05,2026-07-12,2026-07-06,2026-07-13,2026-07-15,DLVD
++PO-3006,SO-1006,1010,2026-07-04,2026-07-05,2026-07-08,2026-07-06,2026-07-09,2026-07-16,DLVD
++PO-3007,SO-1007,1010,2026-07-05,2026-07-06,,,,,CANC
++PO-3008,SO-1008,1010,2026-07-05,2026-07-06,2026-07-11,2026-07-07,2026-07-10,2026-07-12,DLVD
++PO-3009,SO-1009,1010,2026-07-06,2026-07-07,2026-07-12,2026-07-08,2026-07-11,2026-07-13,DLVD
++PO-3010,SO-1010,1010,2026-07-07,2026-07-08,2026-07-13,2026-07-09,2026-07-12,2026-07-19,DLVD
++PO-3011,SO-1011,1010,2026-07-07,2026-07-08,2026-07-13,2026-07-09,2026-07-12,2026-07-14,DLVD
++PO-3012,SO-1012,1010,2026-07-08,2026-07-09,2026-07-14,2026-07-10,2026-07-13,2026-07-15,DLVD
++PO-3013,SO-1013,1010,2026-07-29,2026-07-30,2026-08-04,2026-07-31,2026-08-03,2026-08-05,IN_TRANSIT
++PO-3014,SO-1014,1010,2026-07-09,2026-07-10,2026-07-15,2026-07-11,2026-07-14,2026-07-16,DLVD
++PO-3016,SO-1016,1010,2026-07-11,2026-07-12,2026-07-17,2026-07-13,2026-07-16,2026-07-18,DLVD
++PO-3017,SO-1017,1010,2026-07-12,2026-07-13,2026-07-18,2026-07-14,2026-07-17,2026-07-19,DLVD
++PO-3018,SO-1018,1010,2026-07-13,2026-07-14,2026-07-19,2026-07-15,2026-07-18,2026-07-20,DLVD
++PO-3019,SO-1019,1010,2026-06-02,2026-06-03,2026-06-08,2026-06-04,2026-06-07,2026-06-09,DLVD
++PO-3020,SO-1020,1710,2026-07-02,2026-07-03,2026-07-08,2026-07-04,2026-07-07,2026-07-09,DLVD
++PO-2001,SO-2001,1010,2026-06-19,2026-06-20,2026-06-23,2026-06-21,2026-06-24,2026-06-26,DLVD
++PO-2002,SO-2002,1010,2026-07-17,2026-07-18,2026-07-23,2026-07-19,2026-07-22,2026-07-24,DLVD
++PO-2003,SO-2003,1010,2026-06-19,2026-06-20,2026-06-25,2026-06-21,2026-06-24,2026-06-26,DLVD
++PO-2004,SO-2004,1010,2026-07-14,2026-07-15,2026-07-20,2026-07-16,2026-07-19,2026-07-21,DLVD
++PO-2005,SO-2005,1010,2026-07-03,2026-07-04,2026-07-09,2026-07-05,2026-07-08,2026-07-10,DLVD
++PO-2006,SO-2006,1010,2026-07-16,2026-07-17,2026-07-22,2026-07-18,2026-07-21,2026-07-23,DLVD
++PO-2007,SO-2007,1010,2026-07-17,2026-07-18,2026-07-23,2026-07-19,2026-07-22,2026-07-24,DLVD
++PO-2008,SO-2008,1010,2026-06-25,2026-06-26,2026-07-01,2026-06-27,2026-06-30,2026-07-02,DLVD
++PO-2009,SO-2009,1010,2026-07-17,2026-07-18,2026-07-23,2026-07-19,2026-07-22,2026-07-24,DLVD
++PO-2010,SO-2010,1010,2026-06-19,2026-06-20,2026-06-25,2026-06-21,2026-06-24,2026-06-26,DLVD
++PO-2011,SO-2011,1010,2026-07-05,2026-07-06,2026-07-09,2026-07-07,2026-07-10,2026-07-12,DLVD
++PO-2012,SO-2012,1010,2026-06-21,2026-06-22,2026-06-27,2026-06-23,2026-06-26,2026-06-28,DLVD
++PO-2013,SO-2013,1010,2026-07-15,2026-07-16,2026-07-21,2026-07-17,2026-07-20,2026-07-22,DLVD
++PO-2014,SO-2014,1010,2026-07-11,2026-07-12,2026-07-17,2026-07-13,2026-07-16,2026-07-18,DLVD
++PO-2015,SO-2015,1010,2026-07-02,2026-07-03,2026-07-08,2026-07-04,2026-07-07,2026-07-09,DLVD
++PO-2016,SO-2016,1010,2026-06-24,2026-06-25,2026-06-30,2026-06-26,2026-06-29,2026-07-01,DLVD
++PO-2017,SO-2017,1010,2026-07-16,2026-07-17,2026-07-22,2026-07-18,2026-07-21,2026-07-23,DLVD
++PO-2018,SO-2018,1010,2026-07-18,2026-07-19,2026-07-24,2026-07-20,2026-07-23,2026-07-25,DLVD
++PO-2019,SO-2019,1010,2026-06-28,2026-06-29,2026-07-04,2026-06-30,2026-07-03,2026-07-05,DLVD
++PO-2020,SO-2020,1010,2026-06-23,2026-06-24,2026-06-29,2026-06-25,2026-06-28,2026-06-30,DLVD
++PO-2021,SO-2021,1010,2026-07-10,2026-07-11,2026-07-16,2026-07-12,2026-07-15,2026-07-17,DLVD
++PO-2022,SO-2022,1010,2026-07-09,2026-07-10,2026-07-15,2026-07-11,2026-07-14,2026-07-16,DLVD
++PO-2023,SO-2023,1010,2026-07-11,2026-07-12,2026-07-17,2026-07-13,2026-07-16,2026-07-18,DLVD
++PO-2024,SO-2024,1010,2026-06-26,2026-06-27,2026-07-02,2026-06-28,2026-07-01,2026-07-03,DLVD
++PO-2025,SO-2025,1010,2026-07-14,2026-07-15,2026-07-20,2026-07-16,2026-07-19,2026-07-21,DLVD
++PO-2026,SO-2026,1010,2026-07-12,2026-07-13,2026-07-18,2026-07-14,2026-07-17,2026-07-19,DLVD
++PO-2027,SO-2027,1010,2026-06-22,2026-06-23,2026-06-28,2026-06-24,2026-06-27,2026-06-29,DLVD
++PO-2028,SO-2028,1010,2026-07-14,2026-07-15,2026-07-20,2026-07-16,2026-07-19,2026-07-21,DLVD
++PO-2029,SO-2029,1010,2026-07-12,2026-07-13,2026-07-18,2026-07-14,2026-07-17,2026-07-19,DLVD
++PO-2030,SO-2030,1010,2026-06-26,2026-06-27,2026-07-02,2026-06-28,2026-07-01,2026-07-03,DLVD
++PO-2031,SO-2031,1010,2026-06-24,2026-06-25,2026-06-30,2026-06-26,2026-06-29,2026-07-01,DLVD
++PO-2032,SO-2032,1010,2026-06-25,2026-06-26,2026-07-01,2026-06-27,2026-06-30,2026-07-02,DLVD
++PO-2033,SO-2033,1010,2026-07-17,2026-07-18,2026-07-23,2026-07-19,2026-07-22,2026-07-24,DLVD
++PO-2034,SO-2034,1010,2026-06-21,2026-06-22,2026-06-27,2026-06-23,2026-06-26,2026-06-28,DLVD
++PO-2035,SO-2035,1010,2026-06-26,2026-06-27,2026-07-02,2026-06-28,2026-07-01,2026-07-03,DLVD
++PO-2036,SO-2036,1010,2026-07-04,2026-07-05,2026-07-10,2026-07-06,2026-07-09,2026-07-11,DLVD
++PO-2037,SO-2037,1010,2026-07-11,2026-07-12,2026-07-17,2026-07-13,2026-07-16,2026-07-18,DLVD
++PO-2038,SO-2038,1010,2026-07-17,2026-07-18,2026-07-23,2026-07-19,2026-07-22,2026-07-24,DLVD
++PO-2039,SO-2039,1010,2026-07-12,2026-07-13,2026-07-18,2026-07-14,2026-07-17,2026-07-19,DLVD
++PO-2040,SO-2040,1010,2026-05-23,2026-05-24,,,,,CANC
++PO-2041,SO-2041,1010,2026-05-26,2026-05-27,2026-06-01,2026-05-28,2026-05-31,2026-06-02,DLVD
++PO-2042,SO-2042,1010,2026-06-11,2026-06-12,2026-06-17,2026-06-13,2026-06-16,2026-06-18,DLVD
++PO-2043,SO-2043,1010,2026-05-23,2026-05-24,2026-05-29,2026-05-25,2026-05-28,2026-05-30,DLVD
++PO-2044,SO-2044,1010,2026-06-16,2026-06-17,2026-06-22,2026-06-18,2026-06-21,2026-06-23,DLVD
++PO-2045,SO-2045,1010,2026-06-04,2026-06-05,2026-06-10,2026-06-06,2026-06-09,2026-06-11,DLVD
++PO-2046,SO-2046,1010,2026-06-16,2026-06-17,2026-06-22,2026-06-18,2026-06-21,2026-06-23,DLVD
++PO-2047,SO-2047,1010,2026-05-19,2026-05-20,2026-05-25,2026-05-21,2026-05-24,2026-05-26,DLVD
++PO-2048,SO-2048,1010,2026-05-19,2026-05-20,2026-05-25,2026-05-21,2026-05-24,2026-05-26,DLVD
++PO-2049,SO-2049,1010,2026-06-05,2026-06-06,2026-06-11,2026-06-07,2026-06-10,2026-06-12,DLVD
++PO-2050,SO-2050,1010,2026-06-17,2026-06-18,2026-06-23,2026-06-19,2026-06-22,2026-06-24,DLVD
++PO-2051,SO-2051,1010,2026-06-16,2026-06-17,2026-06-22,2026-06-18,2026-06-21,2026-06-23,DLVD
++PO-2052,SO-2052,1010,2026-06-16,2026-06-17,2026-06-22,2026-06-18,2026-06-21,2026-06-23,DLVD
++PO-2053,SO-2053,1010,2026-05-20,2026-05-21,2026-05-26,2026-05-22,2026-05-25,2026-05-27,DLVD
++PO-2054,SO-2054,1010,2026-06-12,2026-06-13,2026-06-18,2026-06-14,2026-06-17,2026-06-19,DLVD
++PO-2055,SO-2055,1010,2026-06-07,2026-06-08,2026-06-13,2026-06-09,2026-06-12,2026-06-14,DLVD
++PO-2056,SO-2056,1010,2026-05-24,2026-05-25,2026-05-30,2026-05-26,2026-05-29,2026-05-31,DLVD
++PO-2057,SO-2057,1010,2026-05-24,2026-05-25,2026-05-30,2026-05-26,2026-05-29,2026-05-31,DLVD
++PO-2058,SO-2058,1010,2026-05-23,2026-05-24,2026-05-29,2026-05-25,2026-05-28,2026-05-30,DLVD
++PO-2059,SO-2059,1010,2026-06-02,2026-06-03,2026-06-08,2026-06-04,2026-06-07,2026-06-09,DLVD
++PO-2060,SO-2060,1010,2026-06-17,2026-06-18,2026-06-23,2026-06-19,2026-06-22,2026-06-24,DLVD
++PO-2061,SO-2061,1010,2026-05-29,2026-05-30,2026-06-04,2026-05-31,2026-06-03,2026-06-05,DLVD
++PO-2062,SO-2062,1010,2026-06-07,2026-06-08,2026-06-13,2026-06-09,2026-06-12,2026-06-14,DLVD
++PO-2063,SO-2063,1010,2026-06-02,2026-06-03,2026-06-08,2026-06-04,2026-06-07,2026-06-09,DLVD
++PO-2064,SO-2064,1010,2026-06-01,2026-06-02,2026-06-07,2026-06-03,2026-06-06,2026-06-08,DLVD
++PO-2065,SO-2065,1010,2026-05-25,2026-05-26,2026-05-31,2026-05-27,2026-05-30,2026-06-01,DLVD
++PO-2066,SO-2066,1010,2026-08-15,2026-08-16,2026-08-21,2026-08-17,2026-08-20,2026-08-22,IN_TRANSIT
++PO-2067,SO-2067,1010,2026-08-03,2026-08-04,2026-08-09,2026-08-05,2026-08-08,2026-08-10,IN_TRANSIT
++PO-2068,SO-2068,1010,2026-07-30,2026-07-31,2026-08-05,2026-08-01,2026-08-04,2026-08-06,IN_TRANSIT
++PO-2069,SO-2069,1710,2026-07-17,2026-07-18,,,,,CANC
++PO-2070,SO-2070,1710,2026-07-09,2026-07-10,,,,,CANC
++PO-2071,SO-2071,1710,2026-06-30,2026-07-01,2026-07-06,2026-07-02,2026-07-05,2026-07-07,DLVD
++PO-2072,SO-2072,1710,2026-07-18,2026-07-19,2026-07-24,2026-07-20,2026-07-23,2026-07-25,DLVD
++PO-2073,SO-2073,1710,2026-07-07,2026-07-08,2026-07-13,2026-07-09,2026-07-12,2026-07-14,DLVD
++PO-2074,SO-2074,1710,2026-07-09,2026-07-10,2026-07-15,2026-07-11,2026-07-14,2026-07-16,DLVD
++PO-2075,SO-2075,1710,2026-06-30,2026-07-01,2026-07-06,2026-07-02,2026-07-05,2026-07-07,DLVD
++PO-2076,SO-2076,1710,2026-07-17,2026-07-18,2026-07-23,2026-07-19,2026-07-22,2026-07-24,DLVD
++PO-2077,SO-2077,1710,2026-07-03,2026-07-04,2026-07-09,2026-07-05,2026-07-08,2026-07-10,DLVD
++PO-2078,SO-2078,1710,2026-07-02,2026-07-03,2026-07-08,2026-07-04,2026-07-07,2026-07-09,DLVD
++PO-2079,SO-2079,1710,2026-06-30,2026-07-01,2026-07-06,2026-07-02,2026-07-05,2026-07-07,DLVD
++PO-2080,SO-2080,1710,2026-06-23,2026-06-24,2026-06-29,2026-06-25,2026-06-28,2026-06-30,DLVD
++PO-2081,SO-2081,1710,2026-07-16,2026-07-17,2026-07-22,2026-07-18,2026-07-21,2026-07-23,DLVD
++PO-2082,SO-2082,1710,2026-06-29,2026-06-30,2026-07-05,2026-07-01,2026-07-04,2026-07-06,DLVD
++PO-2083,SO-2083,1710,2026-06-29,2026-06-30,2026-07-05,2026-07-01,2026-07-04,2026-07-06,DLVD
++PO-2084,SO-2084,1710,2026-06-27,2026-06-28,2026-07-03,2026-06-29,2026-07-02,2026-07-04,DLVD
++PO-2085,SO-2085,1710,2026-07-17,2026-07-18,2026-07-23,2026-07-19,2026-07-22,2026-07-24,DLVD
++PO-2086,SO-2086,1710,2026-07-17,2026-07-18,2026-07-23,2026-07-19,2026-07-22,2026-07-24,DLVD
++PO-2087,SO-2087,1710,2026-07-15,2026-07-16,2026-07-21,2026-07-17,2026-07-20,2026-07-22,DLVD
++PO-2088,SO-2088,1710,2026-07-03,2026-07-04,2026-07-09,2026-07-05,2026-07-08,2026-07-10,DLVD
++PO-2089,SO-2089,1710,2026-07-17,2026-07-18,2026-07-23,2026-07-19,2026-07-22,2026-07-24,DLVD
++PO-2090,SO-2090,1710,2026-06-27,2026-06-28,2026-07-03,2026-06-29,2026-07-02,2026-07-04,DLVD
++PO-2091,SO-2091,1710,2026-06-26,2026-06-27,2026-07-02,2026-06-28,2026-07-01,2026-07-03,DLVD
++PO-2092,SO-2092,1710,2026-07-07,2026-07-08,2026-07-13,2026-07-09,2026-07-12,2026-07-14,DLVD
++PO-2093,SO-2093,1710,2026-06-22,2026-06-23,2026-06-28,2026-06-24,2026-06-27,2026-06-29,DLVD
++PO-2094,SO-2094,1710,2026-06-24,2026-06-25,2026-06-30,2026-06-26,2026-06-29,2026-07-01,DLVD
++PO-2095,SO-2095,1710,2026-06-22,2026-06-23,2026-06-28,2026-06-24,2026-06-27,2026-06-29,DLVD
++PO-2096,SO-2096,1710,2026-06-22,2026-06-23,2026-06-28,2026-06-24,2026-06-27,2026-06-29,DLVD
++PO-2097,SO-2097,1710,2026-07-09,2026-07-10,2026-07-15,2026-07-11,2026-07-14,2026-07-16,DLVD
++PO-2098,SO-2098,1710,2026-05-26,2026-05-27,2026-06-01,2026-05-28,2026-05-31,2026-06-02,DLVD
++PO-2099,SO-2099,1710,2026-06-13,2026-06-14,2026-06-19,2026-06-15,2026-06-18,2026-06-20,DLVD
++PO-2100,SO-2100,1710,2026-05-30,2026-05-31,2026-06-05,2026-06-01,2026-06-04,2026-06-06,DLVD
++PO-2101,SO-2101,1710,2026-06-04,2026-06-05,2026-06-10,2026-06-06,2026-06-09,2026-06-11,DLVD
++PO-2102,SO-2102,1710,2026-06-04,2026-06-05,2026-06-10,2026-06-06,2026-06-09,2026-06-11,DLVD
++PO-2103,SO-2103,1710,2026-06-09,2026-06-10,2026-06-15,2026-06-11,2026-06-14,2026-06-16,DLVD
++PO-2104,SO-2104,1710,2026-06-06,2026-06-07,2026-06-12,2026-06-08,2026-06-11,2026-06-13,DLVD
++PO-2105,SO-2105,1710,2026-06-10,2026-06-11,2026-06-16,2026-06-12,2026-06-15,2026-06-17,DLVD
++PO-2106,SO-2106,1710,2026-05-29,2026-05-30,2026-06-04,2026-05-31,2026-06-03,2026-06-05,DLVD
++PO-2107,SO-2107,1710,2026-06-15,2026-06-16,2026-06-21,2026-06-17,2026-06-20,2026-06-22,DLVD
++PO-2108,SO-2108,1710,2026-06-09,2026-06-10,2026-06-15,2026-06-11,2026-06-14,2026-06-16,DLVD
++PO-2109,SO-2109,1710,2026-06-09,2026-06-10,2026-06-15,2026-06-11,2026-06-14,2026-06-16,DLVD
++PO-2110,SO-2110,1710,2026-06-11,2026-06-12,2026-06-17,2026-06-13,2026-06-16,2026-06-18,DLVD
++PO-2111,SO-2111,1710,2026-06-03,2026-06-04,2026-06-09,2026-06-05,2026-06-08,2026-06-10,DLVD
++PO-2112,SO-2112,1710,2026-05-30,2026-05-31,2026-06-05,2026-06-01,2026-06-04,2026-06-06,DLVD
+diff --git a/data/sales_orders_raw.csv b/data/sales_orders_raw.csv
+new file mode 100644
+index 0000000..81cd54d
+--- /dev/null
++++ b/data/sales_orders_raw.csv
+@@ -0,0 +1,133 @@
++order_id,region,plant,warehouse,carrier,customer_id,order_date,promised_delivery_date,promised_date_original,order_status
++SO-1001,IN,1010,WH-IN-01,BLUEDART,C-IN-001,2026-07-01,2026-07-13,,DLVD
++SO-1002,IN,1010,WH-IN-01,BLUEDART,C-IN-002,2026-07-01,2026-07-13,,DLVD
++SO-1003,IN,1010,WH-IN-01,FEDEX,C-IN-003,2026-07-02,2026-07-14,,DLVD
++SO-1004,IN,1010,WH-IN-01,BLUEDART,C-IN-004,2026-07-02,2026-07-14,,DLVD
++SO-1005,IN,1010,WH-IN-01,BLUEDART,C-IN-005,2026-07-03,2026-07-15,,DLVD
++SO-1006,IN,1010,WH-IN-01,FEDEX,C-IN-006,2026-07-03,2026-07-15,,DLVD
++SO-1007,IN,1010,WH-IN-01,BLUEDART,C-IN-007,2026-07-04,2026-07-16,,CANC
++SO-1008,IN,1010,WH-IN-01,BLUEDART,C-IN-008,2026-07-04,2026-07-16,,DLVD
++SO-1009,IN,1010,WH-IN-01,FEDEX,C-IN-009,2026-07-05,2026-07-17,,DLVD
++SO-1010,IN,1010,WH-IN-01,BLUEDART,C-IN-010,2026-07-06,2026-07-18,,DLVD
++SO-1011,IN,1010,WH-IN-01,BLUEDART,C-IN-011,2026-07-06,2026-07-24,2026-07-18,DLVD
++SO-1012,IN,1010,WH-IN-01,FEDEX,C-IN-012,2026-07-07,2026-07-19,,DLVD
++SO-1013,IN,1010,WH-IN-01,BLUEDART,C-IN-013,2026-07-28,2026-08-12,,IN_TRANSIT
++SO-1014,IN,1010,WH-IN-01,BLUEDART,C-IN-014,2026-07-08,2026-07-20,,DLVD
++SO-1015,IN,1010,WH-IN-01,BLUEDART,C-IN-015,2026-07-09,2026-07-21,,DLVD
++SO-1016,IN,1010,WH-IN-01,FEDEX,C-IN-016,2026-07-10,2026-07-22,,DLVD
++SO-1017,IN,1010,WH-IN-01,BLUEDART,C-IN-017,2026-07-11,2026-07-23,,DLVD
++SO-1018,IN,1010,WH-IN-01,BLUEDART,C-IN-018,2026-07-12,2026-07-24,,DLVD
++SO-1019,IN,1010,WH-IN-01,BLUEDART,C-IN-019,2026-06-01,2026-06-13,,DLVD
++SO-1020,US,1710,WH-US-01,FEDEX,C-US-001,2026-07-01,2026-07-13,,DLVD
++SO-2001,IN,1010,WH-IN-01,FEDEX,C-IN-888,2026-06-18,2026-07-02,,DLVD
++SO-2002,IN,1010,WH-IN-01,FEDEX,C-IN-557,2026-07-16,2026-07-30,,DLVD
++SO-2003,IN,1010,WH-IN-01,FEDEX,C-IN-542,2026-06-18,2026-07-02,,DLVD
++SO-2004,IN,1010,WH-IN-01,FEDEX,C-IN-396,2026-07-13,2026-07-27,,DLVD
++SO-2005,IN,1010,WH-IN-01,FEDEX,C-IN-179,2026-07-02,2026-07-16,,DLVD
++SO-2006,IN,1010,WH-IN-01,BLUEDART,C-IN-720,2026-07-15,2026-07-29,,DLVD
++SO-2007,IN,1010,WH-IN-01,BLUEDART,C-IN-650,2026-07-16,2026-07-30,,DLVD
++SO-2008,IN,1010,WH-IN-01,BLUEDART,C-IN-192,2026-06-24,2026-07-08,,DLVD
++SO-2009,IN,1010,WH-IN-01,FEDEX,C-IN-638,2026-07-16,2026-07-30,,DLVD
++SO-2010,IN,1010,WH-IN-01,FEDEX,C-IN-688,2026-06-18,2026-07-02,,DLVD
++SO-2011,IN,1010,WH-IN-01,BLUEDART,C-IN-522,2026-07-04,2026-07-18,,DLVD
++SO-2012,IN,1010,WH-IN-01,BLUEDART,C-IN-654,2026-06-20,2026-07-04,,DLVD
++SO-2013,IN,1010,WH-IN-01,BLUEDART,C-IN-543,2026-07-14,2026-07-28,,DLVD
++SO-2014,IN,1010,WH-IN-01,BLUEDART,C-IN-450,2026-07-10,2026-07-24,,DLVD
++SO-2015,IN,1010,WH-IN-01,BLUEDART,C-IN-701,2026-07-01,2026-07-15,,DLVD
++SO-2016,IN,1010,WH-IN-01,BLUEDART,C-IN-897,2026-06-23,2026-07-07,,DLVD
++SO-2017,IN,1010,WH-IN-01,BLUEDART,C-IN-234,2026-07-15,2026-07-29,,DLVD
++SO-2018,IN,1010,WH-IN-01,BLUEDART,C-IN-288,2026-07-17,2026-07-31,,DLVD
++SO-2019,IN,1010,WH-IN-01,BLUEDART,C-IN-809,2026-06-27,2026-07-11,,DLVD
++SO-2020,IN,1010,WH-IN-01,BLUEDART,C-IN-126,2026-06-22,2026-07-06,,DLVD
++SO-2021,IN,1010,WH-IN-01,FEDEX,C-IN-904,2026-07-09,2026-07-23,,DLVD
++SO-2022,IN,1010,WH-IN-01,BLUEDART,C-IN-947,2026-07-08,2026-07-22,,DLVD
++SO-2023,IN,1010,WH-IN-01,BLUEDART,C-IN-457,2026-07-10,2026-07-24,,DLVD
++SO-2024,IN,1010,WH-IN-01,BLUEDART,C-IN-990,2026-06-25,2026-07-09,,DLVD
++SO-2025,IN,1010,WH-IN-01,FEDEX,C-IN-521,2026-07-13,2026-07-27,,DLVD
++SO-2026,IN,1010,WH-IN-01,FEDEX,C-IN-943,2026-07-11,2026-07-25,,DLVD
++SO-2027,IN,1010,WH-IN-01,FEDEX,C-IN-722,2026-06-21,2026-07-05,,DLVD
++SO-2028,IN,1010,WH-IN-01,FEDEX,C-IN-564,2026-07-13,2026-07-27,,DLVD
++SO-2029,IN,1010,WH-IN-01,FEDEX,C-IN-692,2026-07-11,2026-07-25,,DLVD
++SO-2030,IN,1010,WH-IN-01,BLUEDART,C-IN-300,2026-06-25,2026-07-09,,DLVD
++SO-2031,IN,1010,WH-IN-01,BLUEDART,C-IN-157,2026-06-23,2026-07-07,,DLVD
++SO-2032,IN,1010,WH-IN-01,BLUEDART,C-IN-574,2026-06-24,2026-07-08,,DLVD
++SO-2033,IN,1010,WH-IN-01,FEDEX,C-IN-953,2026-07-16,2026-07-30,,DLVD
++SO-2034,IN,1010,WH-IN-01,BLUEDART,C-IN-307,2026-06-20,2026-07-04,,DLVD
++SO-2035,IN,1010,WH-IN-01,FEDEX,C-IN-856,2026-06-25,2026-07-09,,DLVD
++SO-2036,IN,1010,WH-IN-01,BLUEDART,C-IN-517,2026-07-03,2026-07-17,,DLVD
++SO-2037,IN,1010,WH-IN-01,BLUEDART,C-IN-951,2026-07-10,2026-07-24,,DLVD
++SO-2038,IN,1010,WH-IN-01,BLUEDART,C-IN-553,2026-07-16,2026-07-30,,DLVD
++SO-2039,IN,1010,WH-IN-01,BLUEDART,C-IN-942,2026-07-11,2026-07-25,,DLVD
++SO-2040,IN,1010,WH-IN-01,FEDEX,C-IN-149,2026-05-22,2026-06-05,,CANC
++SO-2041,IN,1010,WH-IN-01,BLUEDART,C-IN-579,2026-05-25,2026-06-08,,DLVD
++SO-2042,IN,1010,WH-IN-01,FEDEX,C-IN-553,2026-06-10,2026-06-24,,DLVD
++SO-2043,IN,1010,WH-IN-01,BLUEDART,C-IN-632,2026-05-22,2026-06-05,,DLVD
++SO-2044,IN,1010,WH-IN-01,BLUEDART,C-IN-390,2026-06-15,2026-06-29,,DLVD
++SO-2045,IN,1010,WH-IN-01,FEDEX,C-IN-721,2026-06-03,2026-06-17,,DLVD
++SO-2046,IN,1010,WH-IN-01,BLUEDART,C-IN-216,2026-06-15,2026-06-29,,DLVD
++SO-2047,IN,1010,WH-IN-01,FEDEX,C-IN-565,2026-05-18,2026-06-01,,DLVD
++SO-2048,IN,1010,WH-IN-01,FEDEX,C-IN-837,2026-05-18,2026-06-01,,DLVD
++SO-2049,IN,1010,WH-IN-01,BLUEDART,C-IN-830,2026-06-04,2026-06-18,,DLVD
++SO-2050,IN,1010,WH-IN-01,BLUEDART,C-IN-863,2026-06-16,2026-06-30,,DLVD
++SO-2051,IN,1010,WH-IN-01,FEDEX,C-IN-474,2026-06-15,2026-06-29,,DLVD
++SO-2052,IN,1010,WH-IN-01,BLUEDART,C-IN-532,2026-06-15,2026-06-29,,DLVD
++SO-2053,IN,1010,WH-IN-01,BLUEDART,C-IN-569,2026-05-19,2026-06-02,,DLVD
++SO-2054,IN,1010,WH-IN-01,FEDEX,C-IN-234,2026-06-11,2026-06-25,,DLVD
++SO-2055,IN,1010,WH-IN-01,FEDEX,C-IN-400,2026-06-06,2026-06-20,,DLVD
++SO-2056,IN,1010,WH-IN-01,FEDEX,C-IN-678,2026-05-23,2026-06-06,,DLVD
++SO-2057,IN,1010,WH-IN-01,FEDEX,C-IN-500,2026-05-23,2026-06-06,,DLVD
++SO-2058,IN,1010,WH-IN-01,BLUEDART,C-IN-208,2026-05-22,2026-06-05,,DLVD
++SO-2059,IN,1010,WH-IN-01,FEDEX,C-IN-837,2026-06-01,2026-06-15,,DLVD
++SO-2060,IN,1010,WH-IN-01,BLUEDART,C-IN-202,2026-06-16,2026-06-30,,DLVD
++SO-2061,IN,1010,WH-IN-01,FEDEX,C-IN-181,2026-05-28,2026-06-11,,DLVD
++SO-2062,IN,1010,WH-IN-01,FEDEX,C-IN-783,2026-06-06,2026-06-20,,DLVD
++SO-2063,IN,1010,WH-IN-01,FEDEX,C-IN-785,2026-06-01,2026-06-15,,DLVD
++SO-2064,IN,1010,WH-IN-01,BLUEDART,C-IN-787,2026-05-31,2026-06-14,,DLVD
++SO-2065,IN,1010,WH-IN-01,BLUEDART,C-IN-821,2026-05-24,2026-06-07,,DLVD
++SO-2066,IN,1010,WH-IN-01,BLUEDART,C-IN-584,2026-08-14,2026-08-28,,IN_TRANSIT
++SO-2067,IN,1010,WH-IN-01,FEDEX,C-IN-262,2026-08-02,2026-08-16,,IN_TRANSIT
++SO-2068,IN,1010,WH-IN-01,BLUEDART,C-IN-725,2026-07-29,2026-08-12,,IN_TRANSIT
++SO-2069,US,1710,WH-US-01,BLUEDART,C-US-100,2026-07-16,2026-07-30,,CANC
++SO-2070,US,1710,WH-US-01,FEDEX,C-US-209,2026-07-08,2026-07-22,,CANC
++SO-2071,US,1710,WH-US-01,FEDEX,C-US-762,2026-06-29,2026-07-13,,DLVD
++SO-2072,US,1710,WH-US-01,FEDEX,C-US-526,2026-07-17,2026-07-31,,DLVD
++SO-2073,US,1710,WH-US-01,BLUEDART,C-US-147,2026-07-06,2026-07-20,,DLVD
++SO-2074,US,1710,WH-US-01,BLUEDART,C-US-291,2026-07-08,2026-07-22,,DLVD
++SO-2075,US,1710,WH-US-01,BLUEDART,C-US-783,2026-06-29,2026-07-13,,DLVD
++SO-2076,US,1710,WH-US-01,FEDEX,C-US-118,2026-07-16,2026-07-30,,DLVD
++SO-2077,US,1710,WH-US-01,BLUEDART,C-US-541,2026-07-02,2026-07-16,,DLVD
++SO-2078,US,1710,WH-US-01,BLUEDART,C-US-571,2026-07-01,2026-07-15,,DLVD
++SO-2079,US,1710,WH-US-01,FEDEX,C-US-186,2026-06-29,2026-07-13,,DLVD
++SO-2080,US,1710,WH-US-01,BLUEDART,C-US-189,2026-06-22,2026-07-06,,DLVD
++SO-2081,US,1710,WH-US-01,BLUEDART,C-US-217,2026-07-15,2026-07-29,,DLVD
++SO-2082,US,1710,WH-US-01,BLUEDART,C-US-420,2026-06-28,2026-07-12,,DLVD
++SO-2083,US,1710,WH-US-01,FEDEX,C-US-799,2026-06-28,2026-07-12,,DLVD
++SO-2084,US,1710,WH-US-01,FEDEX,C-US-382,2026-06-26,2026-07-10,,DLVD
++SO-2085,US,1710,WH-US-01,BLUEDART,C-US-205,2026-07-16,2026-07-30,,DLVD
++SO-2086,US,1710,WH-US-01,BLUEDART,C-US-910,2026-07-16,2026-07-30,,DLVD
++SO-2087,US,1710,WH-US-01,FEDEX,C-US-475,2026-07-14,2026-07-28,,DLVD
++SO-2088,US,1710,WH-US-01,BLUEDART,C-US-535,2026-07-02,2026-07-16,,DLVD
++SO-2089,US,1710,WH-US-01,FEDEX,C-US-211,2026-07-16,2026-07-30,,DLVD
++SO-2090,US,1710,WH-US-01,BLUEDART,C-US-432,2026-06-26,2026-07-10,,DLVD
++SO-2091,US,1710,WH-US-01,BLUEDART,C-US-717,2026-06-25,2026-07-09,,DLVD
++SO-2092,US,1710,WH-US-01,BLUEDART,C-US-630,2026-07-06,2026-07-20,,DLVD
++SO-2093,US,1710,WH-US-01,FEDEX,C-US-531,2026-06-21,2026-07-05,,DLVD
++SO-2094,US,1710,WH-US-01,BLUEDART,C-US-686,2026-06-23,2026-07-07,,DLVD
++SO-2095,US,1710,WH-US-01,BLUEDART,C-US-288,2026-06-21,2026-07-05,,DLVD
++SO-2096,US,1710,WH-US-01,FEDEX,C-US-675,2026-06-21,2026-07-05,,DLVD
++SO-2097,US,1710,WH-US-01,FEDEX,C-US-611,2026-07-08,2026-07-22,,DLVD
++SO-2098,US,1710,WH-US-01,FEDEX,C-US-152,2026-05-25,2026-06-08,,DLVD
++SO-2099,US,1710,WH-US-01,FEDEX,C-US-334,2026-06-12,2026-06-26,,DLVD
++SO-2100,US,1710,WH-US-01,FEDEX,C-US-981,2026-05-29,2026-06-12,,DLVD
++SO-2101,US,1710,WH-US-01,BLUEDART,C-US-528,2026-06-03,2026-06-17,,DLVD
++SO-2102,US,1710,WH-US-01,BLUEDART,C-US-878,2026-06-03,2026-06-17,,DLVD
++SO-2103,US,1710,WH-US-01,BLUEDART,C-US-387,2026-06-08,2026-06-22,,DLVD
++SO-2104,US,1710,WH-US-01,BLUEDART,C-US-431,2026-06-05,2026-06-19,,DLVD
++SO-2105,US,1710,WH-US-01,BLUEDART,C-US-904,2026-06-09,2026-06-23,,DLVD
++SO-2106,US,1710,WH-US-01,FEDEX,C-US-318,2026-05-28,2026-06-11,,DLVD
++SO-2107,US,1710,WH-US-01,FEDEX,C-US-275,2026-06-14,2026-06-28,,DLVD
++SO-2108,US,1710,WH-US-01,FEDEX,C-US-498,2026-06-08,2026-06-22,,DLVD
++SO-2109,US,1710,WH-US-01,BLUEDART,C-US-654,2026-06-08,2026-06-22,,DLVD
++SO-2110,US,1710,WH-US-01,FEDEX,C-US-504,2026-06-10,2026-06-24,,DLVD
++SO-2111,US,1710,WH-US-01,BLUEDART,C-US-929,2026-06-02,2026-06-16,,DLVD
++SO-2112,US,1710,WH-US-01,BLUEDART,C-US-171,2026-05-29,2026-06-12,,DLVD
+diff --git a/data/shipments_raw.csv b/data/shipments_raw.csv
+new file mode 100644
+index 0000000..f2fea63
+--- /dev/null
++++ b/data/shipments_raw.csv
+@@ -0,0 +1,135 @@
++shipment_id,delivery_id,carrier,dispatch_date,delivery_date,delivery_status
++SH-1001,DL-1001,BLUEDART,2026-07-11,2026-07-12,DLVD
++SH-1002,DL-1002,BLUEDART,2026-07-15,2026-07-16,DLVD
++SH-1003,DL-1003,FEDEX,2026-07-12,2026-07-19,DLVD
++SH-1004,DL-1004,BLUEDART,2026-07-17,2026-07-18,DLVD
++SH-1005,DL-1005,BLUEDART,2026-07-17,2026-07-18,DLVD
++SH-1006,DL-1006,FEDEX,2026-07-18,2026-07-19,DLVD
++SH-1008,DL-1008,BLUEDART,2026-07-14,2026-07-15,DLVD
++SH-1009A,DL-1009A,FEDEX,2026-07-15,2026-07-16,DLVD
++SH-1009B,DL-1009B,FEDEX,2026-07-15,2026-07-20,DLVD
++SH-1010,DL-1010,BLUEDART,2026-07-21,2026-07-22,DLVD
++SH-1011,DL-1011,BLUEDART,2026-07-16,2026-07-21,DLVD
++SH-1012A,DL-1012A,FEDEX,2026-07-17,2026-07-18,DLVD
++SH-1012B,DL-1012B,FEDEX,2026-07-17,2026-07-18,DLVD
++SH-1013,DL-1013,BLUEDART,2026-08-07,,IN_TRANSIT
++SH-1014A,DL-1014A,BLUEDART,2026-07-18,2026-07-19,DLVD
++SH-1014B,DL-1014B,BLUEDART,2026-07-18,2026-07-19,DLVD
++SH-1015,DL-1015,BLUEDART,2026-07-18,2026-07-19,DLVD
++SH-1016A,DL-1016A,FEDEX,2026-07-20,2026-07-21,DLVD
++SH-1016B,DL-1016B,FEDEX,2026-07-20,2026-07-21,DLVD
++SH-1017A,DL-1017A,BLUEDART,2026-07-21,2026-07-22,DLVD
++SH-1017B,DL-1017B,BLUEDART,2026-07-21,2026-07-22,DLVD
++SH-1018A,DL-1018A,BLUEDART,2026-07-22,2026-07-23,DLVD
++SH-1018B,DL-1018B,BLUEDART,2026-07-22,2026-07-23,DLVD
++SH-1019,DL-1019,BLUEDART,2026-06-11,2026-06-18,DLVD
++SH-1020,DL-1020,FEDEX,2026-07-11,2026-07-12,DLVD
++SH-2001,DL-2001,FEDEX,2026-06-28,2026-07-01,DLVD
++SH-2002,DL-2002,FEDEX,2026-07-26,2026-07-29,DLVD
++SH-2003,DL-2003,FEDEX,2026-06-28,2026-07-01,DLVD
++SH-2004,DL-2004,FEDEX,2026-07-23,2026-07-26,DLVD
++SH-2005,DL-2005,FEDEX,2026-07-12,2026-07-15,DLVD
++SH-2006,DL-2006,BLUEDART,2026-07-25,2026-07-28,DLVD
++SH-2007,DL-2007,BLUEDART,2026-07-26,2026-07-29,DLVD
++SH-2008,DL-2008,BLUEDART,2026-07-04,2026-07-07,DLVD
++SH-2009,DL-2009,FEDEX,2026-07-26,2026-07-29,DLVD
++SH-2010,DL-2010,FEDEX,2026-06-28,2026-07-01,DLVD
++SH-2011,DL-2011,BLUEDART,2026-07-14,2026-07-17,DLVD
++SH-2012,DL-2012,BLUEDART,2026-06-30,2026-07-03,DLVD
++SH-2013,DL-2013,BLUEDART,2026-07-24,2026-07-27,DLVD
++SH-2014,DL-2014,BLUEDART,2026-07-20,2026-07-23,DLVD
++SH-2015,DL-2015,BLUEDART,2026-07-11,2026-07-14,DLVD
++SH-2016,DL-2016,BLUEDART,2026-07-03,2026-07-06,DLVD
++SH-2017,DL-2017,BLUEDART,2026-07-25,2026-07-28,DLVD
++SH-2018,DL-2018,BLUEDART,2026-07-27,2026-07-30,DLVD
++SH-2019,DL-2019,BLUEDART,2026-07-07,2026-07-10,DLVD
++SH-2020,DL-2020,BLUEDART,2026-07-02,2026-07-05,DLVD
++SH-2021,DL-2021,FEDEX,2026-07-19,2026-07-22,DLVD
++SH-2022,DL-2022,BLUEDART,2026-07-18,2026-07-21,DLVD
++SH-2023,DL-2023,BLUEDART,2026-07-20,2026-07-23,DLVD
++SH-2024,DL-2024,BLUEDART,2026-07-05,2026-07-08,DLVD
++SH-2025,DL-2025,FEDEX,2026-07-23,2026-07-26,DLVD
++SH-2026,DL-2026,FEDEX,2026-07-21,2026-07-24,DLVD
++SH-2027,DL-2027,FEDEX,2026-07-01,2026-07-04,DLVD
++SH-2028,DL-2028,FEDEX,2026-07-23,2026-07-26,DLVD
++SH-2029,DL-2029,FEDEX,2026-07-21,2026-07-24,DLVD
++SH-2030,DL-2030,BLUEDART,2026-07-05,2026-07-08,DLVD
++SH-2031,DL-2031,BLUEDART,2026-07-03,2026-07-06,DLVD
++SH-2032,DL-2032,BLUEDART,2026-07-04,2026-07-07,DLVD
++SH-2033,DL-2033,FEDEX,2026-07-26,2026-07-29,DLVD
++SH-2034,DL-2034,BLUEDART,2026-06-30,2026-07-03,DLVD
++SH-2035,DL-2035,FEDEX,2026-07-05,2026-07-08,DLVD
++SH-2036,DL-2036,BLUEDART,2026-07-13,2026-07-16,DLVD
++SH-2037,DL-2037,BLUEDART,2026-07-20,2026-07-23,DLVD
++SH-2038,DL-2038,BLUEDART,2026-07-26,2026-07-29,DLVD
++SH-2039,DL-2039,BLUEDART,2026-07-21,2026-07-24,DLVD
++SH-2041,DL-2041,BLUEDART,2026-06-04,2026-06-07,DLVD
++SH-2042,DL-2042,FEDEX,2026-06-20,2026-06-23,DLVD
++SH-2043,DL-2043,BLUEDART,2026-06-01,2026-06-04,DLVD
++SH-2044,DL-2044,BLUEDART,2026-06-25,2026-06-28,DLVD
++SH-2045,DL-2045,FEDEX,2026-06-13,2026-06-16,DLVD
++SH-2046,DL-2046,BLUEDART,2026-06-25,2026-06-28,DLVD
++SH-2047,DL-2047,FEDEX,2026-05-28,2026-05-31,DLVD
++SH-2048,DL-2048,FEDEX,2026-05-28,2026-05-31,DLVD
++SH-2049,DL-2049,BLUEDART,2026-06-14,2026-06-17,DLVD
++SH-2050,DL-2050,BLUEDART,2026-06-26,2026-06-29,DLVD
++SH-2051,DL-2051,FEDEX,2026-06-25,2026-06-28,DLVD
++SH-2052,DL-2052,BLUEDART,2026-06-25,2026-06-28,DLVD
++SH-2053,DL-2053,BLUEDART,2026-05-29,2026-06-01,DLVD
++SH-2054,DL-2054,FEDEX,2026-06-21,2026-06-24,DLVD
++SH-2055,DL-2055,FEDEX,2026-06-16,2026-06-19,DLVD
++SH-2056,DL-2056,FEDEX,2026-06-02,2026-06-05,DLVD
++SH-2057,DL-2057,FEDEX,2026-06-02,2026-06-05,DLVD
++SH-2058,DL-2058,BLUEDART,2026-06-01,2026-06-04,DLVD
++SH-2059,DL-2059,FEDEX,2026-06-11,2026-06-14,DLVD
++SH-2060,DL-2060,BLUEDART,2026-06-26,2026-06-29,DLVD
++SH-2061,DL-2061,FEDEX,2026-06-07,2026-06-10,DLVD
++SH-2062,DL-2062,FEDEX,2026-06-16,2026-06-19,DLVD
++SH-2063,DL-2063,FEDEX,2026-06-11,2026-06-14,DLVD
++SH-2064,DL-2064,BLUEDART,2026-06-10,2026-06-13,DLVD
++SH-2065,DL-2065,BLUEDART,2026-06-03,2026-06-06,DLVD
++SH-2066,DL-2066,BLUEDART,2026-08-24,,IN_TRANSIT
++SH-2067,DL-2067,FEDEX,2026-08-12,,IN_TRANSIT
++SH-2068,DL-2068,BLUEDART,2026-08-08,,IN_TRANSIT
++SH-2071,DL-2071,FEDEX,2026-07-09,2026-07-16,DLVD
++SH-2072,DL-2072,FEDEX,2026-07-27,2026-08-03,DLVD
++SH-2073,DL-2073,BLUEDART,2026-07-16,2026-07-19,DLVD
++SH-2074,DL-2074,BLUEDART,2026-07-18,2026-07-21,DLVD
++SH-2075,DL-2075,BLUEDART,2026-07-09,2026-07-12,DLVD
++SH-2076,DL-2076,FEDEX,2026-07-26,2026-07-29,DLVD
++SH-2077,DL-2077,BLUEDART,2026-07-12,2026-07-15,DLVD
++SH-2078,DL-2078,BLUEDART,2026-07-11,2026-07-14,DLVD
++SH-2079,DL-2079,FEDEX,2026-07-09,2026-07-12,DLVD
++SH-2080,DL-2080,BLUEDART,2026-07-02,2026-07-05,DLVD
++SH-2081,DL-2081,BLUEDART,2026-07-25,2026-07-28,DLVD
++SH-2082,DL-2082,BLUEDART,2026-07-08,2026-07-11,DLVD
++SH-2083,DL-2083,FEDEX,2026-07-08,2026-07-11,DLVD
++SH-2084,DL-2084,FEDEX,2026-07-06,2026-07-09,DLVD
++SH-2085,DL-2085,BLUEDART,2026-07-26,2026-07-29,DLVD
++SH-2086,DL-2086,BLUEDART,2026-07-26,2026-07-29,DLVD
++SH-2087,DL-2087,FEDEX,2026-07-24,2026-07-27,DLVD
++SH-2088,DL-2088,BLUEDART,2026-07-12,2026-07-15,DLVD
++SH-2089,DL-2089,FEDEX,2026-07-26,2026-07-29,DLVD
++SH-2090,DL-2090,BLUEDART,2026-07-06,2026-07-09,DLVD
++SH-2091,DL-2091,BLUEDART,2026-07-05,2026-07-08,DLVD
++SH-2092,DL-2092,BLUEDART,2026-07-16,2026-07-19,DLVD
++SH-2093,DL-2093,FEDEX,2026-07-01,2026-07-04,DLVD
++SH-2094,DL-2094,BLUEDART,2026-07-03,2026-07-06,DLVD
++SH-2095,DL-2095,BLUEDART,2026-07-01,2026-07-04,DLVD
++SH-2096,DL-2096,FEDEX,2026-07-01,2026-07-04,DLVD
++SH-2097,DL-2097,FEDEX,2026-07-18,2026-07-21,DLVD
++SH-2098,DL-2098,FEDEX,2026-06-04,2026-06-11,DLVD
++SH-2099,DL-2099,FEDEX,2026-06-22,2026-06-25,DLVD
++SH-2100,DL-2100,FEDEX,2026-06-08,2026-06-11,DLVD
++SH-2101,DL-2101,BLUEDART,2026-06-13,2026-06-16,DLVD
++SH-2102,DL-2102,BLUEDART,2026-06-13,2026-06-16,DLVD
++SH-2103,DL-2103,BLUEDART,2026-06-18,2026-06-21,DLVD
++SH-2104,DL-2104,BLUEDART,2026-06-15,2026-06-18,DLVD
++SH-2105,DL-2105,BLUEDART,2026-06-19,2026-06-22,DLVD
++SH-2106,DL-2106,FEDEX,2026-06-07,2026-06-10,DLVD
++SH-2107,DL-2107,FEDEX,2026-06-24,2026-06-27,DLVD
++SH-2108,DL-2108,FEDEX,2026-06-18,2026-06-21,DLVD
++SH-2109,DL-2109,BLUEDART,2026-06-18,2026-06-21,DLVD
++SH-2110,DL-2110,FEDEX,2026-06-20,2026-06-23,DLVD
++SH-2111,DL-2111,BLUEDART,2026-06-12,2026-06-15,DLVD
++SH-2112,DL-2112,BLUEDART,2026-06-08,2026-06-11,DLVD
+diff --git a/tests/test_data.py b/tests/test_data.py
+index 9a072e4..876dcdb 100644
+--- a/tests/test_data.py
++++ b/tests/test_data.py
+@@ -57,10 +57,92 @@ def test_split_delivery_orders():
+     """5 fully-on-time splits + SO-1009 mixed = 6 split orders (spec 5.4)."""
+     rows = _seed_rows()
+     on_time_splits = {r["order_id"] for r in rows if r["split_delivery"] == "on_time"}
+     mixed = {r["order_id"] for r in rows if r["split_delivery"] == "mixed"}
+     assert on_time_splits == {"SO-1012", "SO-1014", "SO-1016", "SO-1017", "SO-1018"}
+     assert mixed == {"SO-1009"}
+ 
+ def test_as_of_date_is_frozen():
+     from src.semantic.constants import AS_OF_DATE
+     assert AS_OF_DATE == date(2026, 8, 7)
++
++import subprocess, sys, hashlib
++from src.semantic.constants import DATA_DIR, REPO_ROOT
++
++RAW_FILES = [
++    "sales_orders_raw.csv", "production_orders_raw.csv", "inspection_lots_raw.csv",
++    "goods_movements_raw.csv", "deliveries_raw.csv", "shipments_raw.csv",
++]
++
++def _orders():
++    with open(DATA_DIR / "sales_orders_raw.csv", newline="") as f:
++        return list(csv.DictReader(f))
++
++def test_all_raw_files_exist():
++    for name in RAW_FILES:
++        assert (DATA_DIR / name).exists(), f"missing {name}"
++
++def test_total_order_count():
++    assert len(_orders()) == 132
++
++def test_in_july_window_composition():
++    """Spec 5.1: 56 in window, 1 cancelled, 55 eligible, 48 on time, 7 late."""
++    rows = [r for r in _orders()
++            if r["region"] == "IN" and r["promised_delivery_date"].startswith("2026-07")]
++    assert len(rows) == 56
++    cancelled = [r for r in rows if r["order_status"] == "CANC"]
++    assert len(cancelled) == 1
++    assert len(rows) - len(cancelled) == 55
++
++def test_in_june_window_composition():
++    rows = [r for r in _orders()
++            if r["region"] == "IN" and r["promised_delivery_date"].startswith("2026-06")]
++    assert len(rows) == 27
++    assert len([r for r in rows if r["order_status"] == "CANC"]) == 1
++
++def test_us_july_window_composition():
++    rows = [r for r in _orders()
++            if r["region"] == "US" and r["promised_delivery_date"].startswith("2026-07")]
++    assert len(rows) == 30
++    assert len([r for r in rows if r["order_status"] == "CANC"]) == 2
++
++def test_us_june_window_composition():
++    rows = [r for r in _orders()
++            if r["region"] == "US" and r["promised_delivery_date"].startswith("2026-06")]
++    assert len(rows) == 15
++
++def test_august_not_yet_due_window():
++    """4 orders promised after AS_OF_DATE -- the not-yet-due exclusion."""
++    rows = [r for r in _orders()
++            if r["region"] == "IN" and r["promised_delivery_date"].startswith("2026-08")]
++    assert len(rows) == 4
++    for r in rows:
++        assert r["promised_delivery_date"] > "2026-08-07"
++
++def test_seed_orders_all_present_in_raw():
++    seed_ids = {r["order_id"] for r in _seed_rows()}
++    raw_ids = {r["order_id"] for r in _orders()}
++    assert seed_ids <= raw_ids
++
++def test_split_deliveries_produce_extra_rows():
++    """6 split orders -> 6 extra delivery legs."""
++    with open(DATA_DIR / "deliveries_raw.csv", newline="") as f:
++        deliveries = list(csv.DictReader(f))
++    from collections import Counter
++    per_order = Counter(d["order_id"] for d in deliveries)
++    assert len([o for o, n in per_order.items() if n == 2]) == 6
++
++def test_rework_lot_has_two_decisions():
++    with open(DATA_DIR / "inspection_lots_raw.csv", newline="") as f:
++        lots = list(csv.DictReader(f))
++    ql4004 = [l for l in lots if l["inspection_lot_id"] == "QL-4004"]
++    assert len(ql4004) == 2
++    assert {l["decision_seq"] for l in ql4004} == {"1", "2"}
++    first = next(l for l in ql4004 if l["decision_seq"] == "1")
++    assert first["usage_decision"] == "REWORK"
++
++def test_generator_is_deterministic():
++    """Re-running must leave files byte-identical."""
++    before = {n: hashlib.sha256((DATA_DIR / n).read_bytes()).hexdigest() for n in RAW_FILES}
++    subprocess.run([sys.executable, str(DATA_DIR / "generate.py")], cwd=REPO_ROOT, check=True)
++    after = {n: hashlib.sha256((DATA_DIR / n).read_bytes()).hexdigest() for n in RAW_FILES}
++    assert before == after

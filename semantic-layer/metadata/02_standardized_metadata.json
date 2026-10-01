@@ -1,0 +1,279 @@
+{
+  "description": "Phase 2 artifact: Standardized metadata with declared grain per table. This layer maps raw SAP field names to canonical business names and explicitly declares the grain of each fact table. The grain declaration is what prevents the split-delivery fan-out that inflates OTD from 87.3% to 88.5%.",
+  "owner": "Data Engineering Team",
+  "steward": "Data Architecture Lead",
+  "last_reviewed": "2026-08-01",
+  "approval_state": "approved",
+  "version": "1.0",
+
+  "grain_declarations": [
+    {
+      "table": "fact_order_delivery",
+      "grain": "order",
+      "primary_key": "order_id",
+      "description": "One row per customer sales order. All delivery legs collapsed to the order grain via max(delivery_date). This is the grain for on-time delivery measurement.",
+      "enforcement": "Test test_fact_is_one_row_per_order asserts count(*) = count(DISTINCT order_id). Any fan-out from split deliveries or joins would violate this and fail the test.",
+      "why_this_grain_matters": "6 orders ship in two legs (deliveries_raw has 2 rows for SO-1009, SO-1012, SO-1014, SO-1016, SO-1017, SO-1018). Measuring OTD at delivery-leg grain double-counts split shipments and produces 88.52% instead of 87.27%. The semantic model declares grain: order and the validator rejects delivery-grain queries.",
+      "row_count": 132,
+      "unique_keys": 132
+    },
+    {
+      "table": "fact_production_order",
+      "grain": "production_order",
+      "primary_key": "production_order_id",
+      "description": "One row per production order. Used for manufacturing schedule adherence and first-pass yield metrics.",
+      "enforcement": "Test test_production_order_grain_claim_is_enforced asserts count(*) = count(DISTINCT production_order_id) = 131.",
+      "why_this_grain_matters": "Some orders have no production order (e.g. SO-1015, make-to-stock). Measuring order-grain metrics by joining through production orders would silently drop those orders and inflate OTD. The semantic model uses LEFT JOIN and marks the join cardinality as many_to_one.",
+      "row_count": 131
+    },
+    {
+      "table": "dim_process_phase",
+      "grain": "phase",
+      "primary_key": "phase_seq",
+      "description": "Literal VALUES table with 12 process phases and their standard durations. This is the source of truth for all phase duration constants.",
+      "row_count": 12
+    }
+  ],
+
+  "field_mappings": [
+    {
+      "source_table": "VBAK",
+      "source_field": "VBELN",
+      "canonical_name": "order_id",
+      "target_table": "fact_order_delivery",
+      "target_column": "order_id",
+      "data_type": "VARCHAR",
+      "is_dimension": true,
+      "is_measure": false,
+      "transformation": "Direct mapping, no transformation"
+    },
+    {
+      "source_table": "VBAK",
+      "source_field": "KUNNR",
+      "canonical_name": "customer_id",
+      "target_table": "fact_order_delivery",
+      "target_column": "customer_id",
+      "data_type": "VARCHAR",
+      "is_dimension": true,
+      "is_measure": false,
+      "transformation": "Direct mapping"
+    },
+    {
+      "source_table": "VBAK",
+      "source_field": "ERDAT",
+      "canonical_name": "order_date",
+      "target_table": "fact_order_delivery",
+      "target_column": "order_date",
+      "data_type": "DATE",
+      "is_dimension": false,
+      "is_measure": false,
+      "transformation": "CAST(VBAK-ERDAT AS DATE)"
+    },
+    {
+      "source_table": "VBEP",
+      "source_field": "EDATU",
+      "canonical_name": "promised_delivery_date",
+      "target_table": "fact_order_delivery",
+      "target_column": "promised_delivery_date",
+      "data_type": "DATE",
+      "is_dimension": false,
+      "is_measure": false,
+      "transformation": "CAST(VBEP-EDATU AS DATE). If an order is re-promised, the CURRENT promise is used, not the original."
+    },
+    {
+      "source_table": "LIKP",
+      "source_field": "WADAT_IST",
+      "canonical_name": "goods_issue_date",
+      "target_table": "fact_order_delivery",
+      "target_column": "goods_issue_date",
+      "data_type": "DATE",
+      "is_dimension": false,
+      "is_measure": false,
+      "transformation": "CAST(LIKP-WADAT_IST AS DATE). For split deliveries, min(goods_issue_date) across legs."
+    },
+    {
+      "source_table": "deliveries_raw",
+      "source_field": "delivery_date",
+      "canonical_name": "final_delivery_date",
+      "target_table": "fact_order_delivery",
+      "target_column": "final_delivery_date",
+      "data_type": "DATE",
+      "is_dimension": false,
+      "is_measure": false,
+      "transformation": "max(delivery_date) across all delivery legs for the order. An order is delivered when its LAST leg arrives. This is the split-delivery collapse that enforces order grain."
+    },
+    {
+      "source_table": "AFKO",
+      "source_field": "AUFNR",
+      "canonical_name": "production_order_id",
+      "target_table": "fact_order_delivery",
+      "target_column": "production_order_id",
+      "data_type": "VARCHAR",
+      "is_dimension": true,
+      "is_measure": false,
+      "transformation": "LEFT JOIN to stg_production_orders. NULL for make-to-stock orders (e.g. SO-1015)."
+    },
+    {
+      "source_table": "AFRU",
+      "source_field": "BUDAT",
+      "canonical_name": "prod_confirm_date",
+      "target_table": "fact_order_delivery",
+      "target_column": "prod_confirm_date",
+      "data_type": "DATE",
+      "is_dimension": false,
+      "is_measure": false,
+      "transformation": "CAST(AFRU-BUDAT AS DATE). Phase 5 timestamp."
+    },
+    {
+      "source_table": "QALS",
+      "source_field": "VDATUM",
+      "canonical_name": "qm_first_decision_date",
+      "target_table": "fact_order_delivery",
+      "target_column": "qm_first_decision_date",
+      "data_type": "DATE",
+      "is_dimension": false,
+      "is_measure": false,
+      "transformation": "min(QALS-VDATUM WHERE decision_seq = '1'). For first-pass yield calculation."
+    },
+    {
+      "source_table": "QALS",
+      "source_field": "VDATUM",
+      "canonical_name": "qm_final_decision_date",
+      "target_table": "fact_order_delivery",
+      "target_column": "qm_final_decision_date",
+      "data_type": "DATE",
+      "is_dimension": false,
+      "is_measure": false,
+      "transformation": "max(QALS-VDATUM). For reworked lots (e.g. QL-4004), this is the FINAL decision date, not the first. Phase 6 timestamp for variance calculation uses the final decision."
+    },
+    {
+      "source_table": "MKPF",
+      "source_field": "BUDAT",
+      "canonical_name": "gr_date",
+      "target_table": "fact_order_delivery",
+      "target_column": "gr_date",
+      "data_type": "DATE",
+      "is_dimension": false,
+      "is_measure": false,
+      "transformation": "CAST(MKPF-BUDAT AS DATE) for goods receipt movement. Phase 7 timestamp."
+    },
+    {
+      "source_table": "VTTK",
+      "source_field": "DPTBG",
+      "canonical_name": "shipment_date",
+      "target_table": "fact_order_delivery",
+      "target_column": "shipment_date",
+      "data_type": "DATE",
+      "is_dimension": false,
+      "is_measure": false,
+      "transformation": "CAST(VTTK-DPTBG AS DATE). Phase 10 timestamp."
+    },
+    {
+      "source_table": "VBRK",
+      "source_field": "FKDAT",
+      "canonical_name": "invoice_date",
+      "target_table": "fact_order_delivery",
+      "target_column": "invoice_date",
+      "data_type": "DATE",
+      "is_dimension": false,
+      "is_measure": false,
+      "transformation": "MODELED as final_delivery_date + billing_standard_duration (1 day). Not extracted from raw billing documents."
+    }
+  ],
+
+  "conformed_dimensions": [
+    {
+      "dimension": "region",
+      "description": "Geographic region (country or country group)",
+      "allowed_values": ["IN", "US", "DE", "CN", "BR"],
+      "source": "Master data / organizational hierarchy",
+      "used_in_tables": ["fact_order_delivery", "fact_production_order"],
+      "is_slowly_changing": false
+    },
+    {
+      "dimension": "plant",
+      "description": "Manufacturing plant or fulfillment center",
+      "allowed_values": ["1010", "1710", "2020", "3030"],
+      "source": "SAP organizational structure",
+      "used_in_tables": ["fact_order_delivery", "fact_production_order"],
+      "is_slowly_changing": false
+    },
+    {
+      "dimension": "warehouse",
+      "description": "Finished goods warehouse",
+      "source": "SAP EWM / LE configuration",
+      "used_in_tables": ["fact_order_delivery"],
+      "is_slowly_changing": false
+    },
+    {
+      "dimension": "carrier",
+      "description": "Transportation carrier for final delivery",
+      "allowed_values": ["BLUEDART", "FEDEX", "DHL", "UPS", "MAERSK"],
+      "source": "Carrier master data",
+      "used_in_tables": ["fact_order_delivery"],
+      "is_slowly_changing": false
+    },
+    {
+      "dimension": "order_status",
+      "description": "Current status of the sales order",
+      "allowed_values": ["DLVD", "IN_TRANSIT", "CANC", "OPEN"],
+      "source": "SAP SD order header",
+      "used_in_tables": ["fact_order_delivery"],
+      "is_slowly_changing": false
+    },
+    {
+      "dimension": "delay_attribution_phase",
+      "description": "Manufacturing phase that caused a late order (derived column)",
+      "allowed_values": [
+        "mrp_planning", "production_release", "material_staging",
+        "production_execution", "quality_inspection", "goods_receipt", "picking_packing",
+        "goods_issue", "transportation"
+      ],
+      "source": "Computed from per-phase variances in fact_order_delivery",
+      "used_in_tables": ["fact_order_delivery"],
+      "is_slowly_changing": false,
+      "computation_rule": "argmax(variance_days) over the 9 variance spans (phase_seq 2-10), evaluated only for late delivered eligible orders. Phase 1 is the chain start rather than a span, phase 11 is a 0-day event absorbed into var_shipment, and phase 12 follows delivery -- so those three phase keys are not emittable values of this dimension."
+    }
+  ],
+
+  "join_paths": [
+    {
+      "from_table": "fact_order_delivery",
+      "to_table": "fact_production_order",
+      "join_type": "LEFT",
+      "cardinality": "many_to_one",
+      "join_key": "production_order_id",
+      "rationale": "Some orders have no production order (make-to-stock). An INNER JOIN would silently drop those orders and inflate OTD. The semantic model declares this join with cardinality: many_to_one so the validator can detect fan-out."
+    },
+    {
+      "from_table": "fact_order_delivery",
+      "to_table": "deliveries_raw",
+      "join_type": "ONE_TO_MANY",
+      "cardinality": "one_to_many",
+      "join_key": "order_id",
+      "rationale": "FAN-OUT HAZARD. 6 orders ship in two legs. Joining here without re-aggregating to order grain yields 88.52% instead of 87.27%. The semantic model declares this join path as one_to_many and marks the delivery_id dimension as queryable_at_grain: delivery, so the no_fanout gate rejects it for order-grain metrics."
+    }
+  ],
+
+  "data_quality_notes": [
+    "fact_order_delivery enforces order grain via max(delivery_date) aggregation before the final JOIN. Test test_fact_is_one_row_per_order validates this.",
+    "Cancelled orders (order_status = 'CANC') have NULL final_delivery_date and are excluded from OTD denominator.",
+    "Not-yet-due orders (promised_delivery_date > AS_OF_DATE) are excluded via is_eligible flag.",
+    "SO-1013 is in-transit with final_delivery_date = NULL; it must not count as late because it is not yet due.",
+    "SO-1015 is make-to-stock with production_order_id = NULL; it must survive the LEFT JOIN and count as eligible.",
+    "SO-1009 has split_delivery = 'mixed': leg A delivered on time (2026-07-16), leg B late (2026-07-20). Order is late using max(delivery_date) = 2026-07-20."
+  ],
+
+  "lineage": {
+    "upstream": [
+      "01_technical_metadata.json (SAP DDIC field definitions)",
+      "data/*_raw.csv (committed sample data)",
+      "sql/02_staging_model.sql (grain-enforcing SQL)"
+    ],
+    "downstream": [
+      "metadata/05_semantic_model.yml (entity and metric definitions)",
+      "src/semantic/validator.py (grain_matches gate)",
+      "tests/test_warehouse.py (grain enforcement tests)"
+    ]
+  }
+}

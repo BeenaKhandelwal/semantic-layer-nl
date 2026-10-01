@@ -1,0 +1,237 @@
+# Phase 4 artifact: Manufacturing process model with standard durations
+#
+# This file defines the 12-phase Plan-to-Deliver process, baseline durations,
+# and the variance attribution rule that makes "why did OTD drop" computable.
+#
+# CRITICAL: standard_duration_days values must match dim_process_phase in
+# sql/02_staging_model.sql EXACTLY. A test compares them row by row.
+#
+# Phases 1-11 sum to 12 days (the delivery promise horizon).
+# All 12 phases sum to 13 days (billing follows delivery, cannot consume slack).
+
+phases:
+  - phase_seq: 1
+    phase_key: demand_capture
+    phase_name: Demand & order capture
+    sap_module: SAP SD
+    business_event: Sales order created
+    timestamp_field: order_date
+    standard_duration_days: 0
+    description: >
+      Customer order is received and entered into SAP SD. Zero-day event:
+      no production work occurs during this phase.
+
+  - phase_seq: 2
+    phase_key: mrp_planning
+    phase_name: Requirements planning
+    sap_module: SAP PP (MRP)
+    business_event: Planned order created
+    timestamp_field: mrp_date
+    standard_duration_days: 1
+    description: >
+      MRP run evaluates demand and creates planned orders to fulfill it.
+      Standard: 1 day from order entry to MRP execution.
+
+  - phase_seq: 3
+    phase_key: production_release
+    phase_name: Production order release
+    sap_module: SAP PP
+    business_event: Production order released
+    timestamp_field: release_date
+    standard_duration_days: 1
+    description: >
+      Planned order is converted to a production order and released for execution.
+      Standard: 1 day from MRP to release.
+
+  - phase_seq: 4
+    phase_key: material_staging
+    phase_name: Material staging & issue
+    sap_module: SAP MM
+    business_event: Goods issue to production order
+    timestamp_field: material_issue_date
+    standard_duration_days: 1
+    description: >
+      Raw materials and components are staged and issued to the production order.
+      Standard: 1 day from release to material availability.
+
+  - phase_seq: 5
+    phase_key: production_execution
+    phase_name: Production execution
+    sap_module: SAP PP
+    business_event: Operation confirmed
+    timestamp_field: prod_confirm_date
+    standard_duration_days: 3
+    description: >
+      Manufacturing operations are executed and confirmed. Standard: 3 days
+      from material issue to production completion. Longest phase in the chain.
+
+  - phase_seq: 6
+    phase_key: quality_inspection
+    phase_name: Quality inspection
+    sap_module: SAP QM
+    business_event: Usage decision
+    timestamp_field: qm_final_decision_date
+    standard_duration_days: 1
+    description: >
+      Finished goods are inspected and a usage decision is recorded (accept,
+      reject, or rework). Standard: 1 day from production confirmation to
+      QM decision. For reworked lots, this is the FINAL decision date.
+
+  - phase_seq: 7
+    phase_key: goods_receipt
+    phase_name: Goods receipt to stock
+    sap_module: SAP MM / EWM
+    business_event: GR posted to unrestricted stock
+    timestamp_field: gr_date
+    standard_duration_days: 1
+    description: >
+      Accepted finished goods are posted to unrestricted-use inventory.
+      Standard: 1 day from QM decision to GR.
+
+  - phase_seq: 8
+    phase_key: picking_packing
+    phase_name: Picking & packing
+    sap_module: SAP EWM
+    business_event: Picking completed
+    timestamp_field: picking_date
+    standard_duration_days: 1
+    description: >
+      Order is picked from warehouse stock and packed for shipment.
+      Standard: 1 day from GR to picking complete.
+
+  - phase_seq: 9
+    phase_key: goods_issue
+    phase_name: Goods issue / dispatch
+    sap_module: SAP LE-SHP
+    business_event: Actual goods issue
+    timestamp_field: goods_issue_date
+    standard_duration_days: 0
+    description: >
+      Packed shipment is handed over to carrier and goods issue is posted.
+      Zero-day event: goods issue and picking occur in rapid succession.
+
+  - phase_seq: 10
+    phase_key: transportation
+    phase_name: Transportation
+    sap_module: SAP TM
+    business_event: Shipment dispatched
+    timestamp_field: shipment_date
+    standard_duration_days: 3
+    description: >
+      Carrier transports goods from warehouse to customer site. Standard: 3 days
+      from goods issue to delivery confirmation. This variance absorbs both
+      transportation and delivery_confirmation (phase 11, a zero-day POD event).
+
+  - phase_seq: 11
+    phase_key: delivery_confirmation
+    phase_name: Delivery confirmation
+    sap_module: SAP TM / LE
+    business_event: POD / delivery confirmed
+    timestamp_field: final_delivery_date
+    standard_duration_days: 0
+    description: >
+      Proof of delivery is received and the delivery is confirmed complete.
+      Zero-day event: the moment the customer accepts the shipment.
+
+  - phase_seq: 12
+    phase_key: billing
+    phase_name: Billing
+    sap_module: SAP SD
+    business_event: Invoice created
+    timestamp_field: invoice_date
+    standard_duration_days: 1
+    description: >
+      Invoice is created and sent to the customer. Standard: 1 day after
+      delivery confirmation. Billing follows delivery and cannot consume
+      delivery promise slack, so it is excluded from available_slack_days
+      computation (phases 1-11 only sum to 12).
+
+# How each phase's elapsed time is measured. END-ANCHORED: a span belongs to the phase
+# it ENDS at. This is the load-bearing convention -- naming a variance after the phase it
+# starts from puts every standard one phase out of step, which is exactly the defect that
+# shipped and had to be corrected in the fact table.
+#
+# The spans are contiguous: each one starts where the previous ended, so every day between
+# order_date and final_delivery_date is owned by exactly one phase and
+# sum(variances) = elapsed - 12 for every delivered order. An unowned span would let a real
+# delay produce no variance anywhere and return "no cause found" for a late order. The
+# warehouse asserts this reconciliation directly (test_variance_chain_is_contiguous).
+variances:
+  - column: var_mrp
+    phase_key: mrp_planning
+    span: order_date -> mrp_date
+    standard_duration_days: 1
+  - column: var_release
+    phase_key: production_release
+    span: mrp_date -> release_date
+    standard_duration_days: 1
+  - column: var_issue
+    phase_key: material_staging
+    span: release_date -> material_issue_date
+    standard_duration_days: 1
+  - column: var_confirm
+    phase_key: production_execution
+    span: material_issue_date -> prod_confirm_date
+    standard_duration_days: 3
+  - column: var_qm
+    phase_key: quality_inspection
+    span: prod_confirm_date -> qm_final_decision_date
+    standard_duration_days: 1
+    note: >
+      Uses the FINAL decision, because attribution asks how long inspection actually
+      took including any rework re-inspection. first_pass_yield_pct is the opposite
+      case and must use the FIRST decision.
+  - column: var_gr
+    phase_key: goods_receipt
+    span: qm_final_decision_date -> gr_date
+    standard_duration_days: 1
+  - column: var_picking
+    phase_key: picking_packing
+    span: gr_date -> picking_date
+    standard_duration_days: 1
+  - column: var_goods_issue
+    phase_key: goods_issue
+    span: picking_date -> goods_issue_date
+    standard_duration_days: 0
+  - column: var_shipment
+    phase_key: transportation
+    span: goods_issue_date -> final_delivery_date
+    standard_duration_days: 3
+    note: >
+      Starts at goods issue, not at dispatch, and its standard absorbs
+      delivery_confirmation's 0 days. Measuring from the dispatch timestamp left the
+      goods-issue-to-dispatch span owned by nobody, so a dispatch hold produced no
+      variance in any column. The nine standards here sum to 12, matching the 12 that
+      available_slack_days subtracts.
+
+attribution:
+  rule: variance_argmax
+  description: >
+    Delay attribution identifies which phase caused an order to be late.
+    For each phase, variance = (actual_duration - standard_duration).
+    The phase with the largest positive variance is the attributed cause.
+  formula: delay_attribution_phase = argmax(variance_days) over the 9 variances above
+  tie_breaking: earliest phase wins (lowest phase_seq)
+  candidate_phases: >
+    The nine spans in the variances block, covering phase_seq 2-10. Phase 1
+    (demand_capture) is the chain's start point rather than a span, phase 11
+    (delivery_confirmation) is a 0-day event absorbed into var_shipment, and phase 12
+    (billing) follows delivery. Only a phase with variance > 0 can be attributed.
+  scope: evaluated only for orders that are eligible, delivered, and late
+  exclusions:
+    - On-time orders return NULL (no delay to attribute)
+    - Not-yet-due orders return NULL (not late, pending)
+    - Cancelled orders return NULL (never delivered)
+    - Undelivered in-transit orders return NULL (not delivered)
+  notes:
+    - Phase 12 (billing) is excluded from attribution because it occurs after
+      the promised delivery date and cannot explain a delivery delay.
+    - A phase with no variance (actual = standard) cannot be the attributed
+      cause, even if all other phases are faster than standard.
+    - A phase that did not run (e.g. production for make-to-stock orders)
+      has variance = NULL and cannot be attributed.
+
+owner: VP Supply Chain Operations
+steward: Manufacturing Excellence Team
+last_reviewed: 2026-08-01
+approval_state: approved

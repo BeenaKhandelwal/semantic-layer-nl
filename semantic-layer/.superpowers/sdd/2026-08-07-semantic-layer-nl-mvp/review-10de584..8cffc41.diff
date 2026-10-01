@@ -1,0 +1,1717 @@
+diff --git a/metadata/00_kpi_contract.md b/metadata/00_kpi_contract.md
+new file mode 100644
+index 0000000..55e5ffc
+--- /dev/null
++++ b/metadata/00_kpi_contract.md
+@@ -0,0 +1,152 @@
++# Phase 0: KPI Contract — Agreed Metric Definitions
++
++**Purpose:** This contract defines the metrics this semantic layer must answer, the business decisions they support, who owns each metric, and the acceptance criteria for "done". Without an agreed definition, two people asking the same question get two different numbers, and neither is wrong.
++
++**Owner:** Chief Supply Chain Officer  
++**Steward:** Supply Chain Analytics Council  
++**Last Reviewed:** 2026-08-01  
++**Status:** Approved
++
++---
++
++## The Two Demonstrator Questions
++
++These are the verbatim natural-language questions the MVP must answer, drawn from real executive reporting requirements. Both answers are computed from committed sample data (Section 5 of design.md) and asserted in the acceptance criteria, so every published figure is reproducible rather than illustrative.
++
++### Question 1 (Descriptive): What was on-time delivery performance for India warehouses last month?
++
++**Resolves to:** `on_time_delivery_pct` metric, filtered to `region = 'IN'`, time window July 2026.
++
++**Expected Answer:**
++> **87.3%** (48 of 55 eligible orders delivered on time).
++
++**Business Context:** Monthly executive scorecard. This number gates the quarterly bonus for the India supply chain team. If OTD falls below 85%, a corrective action plan is triggered.
++
++---
++
++### Question 2 (Diagnostic): Why did on-time delivery drop for India warehouses last month?
++
++**Resolves to:** Same metric and filters as Q1, broken out by `delay_attribution_phase` dimension, with a comparison against the prior month (June 2026).
++
++**Expected Answer:**
++> **87.3%, down 8.9pp from 96.2% in June** (25 of 26 eligible). 7 orders were late. Attribution: **quality inspection 4**, transportation 2, production execution 1. On those 4 orders, QM usage decision consumed an average 4.1 days against a 1.0-day standard — 3.1 days of variance against only 4.0 days of available slack. Plant 1010.
++
++**Business Context:** Root-cause analysis for performance drops. This attribution drives targeted process improvements: if QM is the bottleneck, invest in faster inspection equipment or additional QM staff; if transportation dominates, renegotiate carrier SLAs or add backup carriers.
++
++---
++
++## The Four Governed Metrics
++
++| Metric | Definition | Grain | Owner | Steward | Business Decision Supported |
++|--------|------------|-------|-------|---------|---------------------------|
++| **On-Time Delivery %** | Share of eligible customer orders delivered on or before the promised delivery date | `order` | VP Supply Chain | Supply Chain Analytics Lead | Executive scorecard; supplier performance reviews; quarterly bonus gates |
++| **Manufacturing Schedule Adherence %** | Share of production orders confirmed on or before the scheduled finish date | `production_order` | VP Manufacturing | Production Planning Lead | Manufacturing capacity planning; shift scheduling; bottleneck identification |
++| **First Pass Yield %** | Share of production orders accepted at the **first** quality inspection decision | `production_order` | VP Quality | Quality Analytics Lead | Quality investment prioritization; defect root-cause analysis; supplier quality management |
++| **Production Cycle Time (days)** | Average days from production order release to goods receipt | `production_order` | VP Manufacturing | Industrial Engineering | Lean initiatives; process improvement projects; lead time quoting |
++
++---
++
++## Why These Metrics Matter
++
++### The Grain Problem (Phase 2)
++
++**Without a declared grain, the split-delivery fan-out inflates OTD from 87.3% to 88.5%.**
++
++- 6 orders ship in two legs (deliveries_raw.csv has 2 rows per order_id for SO-1009, SO-1012, SO-1014, SO-1016, SO-1017, SO-1018).
++- Joining at delivery grain (one row per delivery leg) double-counts split shipments in the numerator.
++- The wrong number (88.5%) is both **close enough to look plausible** and **flattering** — a performance overstatement survives review because it makes the team look good.
++- The semantic model declares `grain: order` and the validator rejects delivery-grain queries.
++
++### The Rework Trap (Phase 3)
++
++**Without an exclusion rule, First Pass Yield reads 94.5% instead of 94.4%.**
++
++- SO-1004 has a rework loop: inspection lot QL-4004 has two usage decisions (decision_seq 1 = REWORK, decision_seq 2 = ACCEPT).
++- Counting all decisions treats the reworked lot as both a failure and a success, understating the defect rate.
++- The metric definition in `05_semantic_model.yml` specifies: *"first usage decision only (decision_seq = 1); excludes rework re-inspections"*.
++- The compiler applies this exclusion unconditionally, so every query gets the same answer.
++
++### The Attribution Rule (Phase 4)
++
++**Without per-phase baselines and a variance rule, "why did OTD drop" is unanswerable.**
++
++- Each phase has a standard duration (e.g. quality inspection = 1 day, production execution = 3 days).
++- For each order, `variance_days = actual_duration - standard_duration` per phase.
++- `delay_attribution_phase = argmax(variance_days)` over phases 1–11, evaluated only for late delivered eligible orders.
++- This rule is defined once in `04_process_model.yml` and implemented in `sql/02_staging_model.sql` as a derived column. The LLM never computes it.
++
++---
++
++## Exclusions (What Counts as Eligible)
++
++| Metric | Exclusions | Rationale |
++|--------|------------|-----------|
++| On-Time Delivery % | Cancelled orders (`order_status = 'CANC'`) | A cancelled order was never due; including it inflates the denominator |
++| | Not-yet-due orders (`promised_delivery_date > AS_OF_DATE`) | An order promised after the as-of date is not late, it is pending |
++| Manufacturing Schedule Adherence % | Cancelled production orders | Same rationale as OTD |
++| First Pass Yield % | Rework re-inspections (`decision_seq > 1`) | Prevents double-counting; measures right-first-time |
++| Production Cycle Time | Cancelled production orders | Incomplete orders distort the average |
++
++**Critical:** These exclusions are not suggestions. They are implemented as predicates in `05_semantic_model.yml` and applied unconditionally by the compiler. A validator gate (`exclusions_applied`) ensures they are present before SQL is generated.
++
++---
++
++## Test Oracle and Acceptance Criteria
++
++**Committed data:** `data/seed_core.csv` (20 hand-authored orders) + `data/generate.py` (112 generated) → 132 total orders.
++
++**Canonical numbers** (from `design.md` §5.1, verified by `tests/test_compiler.py`):
++
++| Quantity | Value | Test |
++|----------|-------|------|
++| OTD, IN July 2026 | 48/55 = 87.2727% | `test_q1_otd_india_july_is_87_27_percent` |
++| OTD, IN June 2026 | 25/26 = 96.1538% | `test_otd_india_june_is_96_15_percent` |
++| Drop | 8.88pp | `test_the_drop_is_8_88_pp` |
++| Late attribution, IN July | quality_inspection 4, transportation 2, production_execution 1 | `test_q2_attribution_breakdown` |
++| Naive delivery-grain OTD (wrong) | 54/61 = 88.5246% | `test_naive_delivery_grain_overstates_to_88_52` |
++| First-pass yield, IN July | 51/54 = 94.4444% | `test_fpy_correct_and_naive` |
++| Naive FPY counting rework (wrong) | 52/55 = 94.5455% | same test |
++| Schedule adherence, IN July | 50/54 = 92.5926% | `test_schedule_adherence` |
++
++**Definition of done:**
++
++1. `python src/ask.py --offline Q1` returns 87.3% with lineage, exclusions applied, and trust badge = TRUSTED.
++2. `python src/ask.py --offline Q2` returns the attribution breakdown with quality_inspection = 4.
++3. `python -m pytest` → 34+ tests pass, including all canonical number assertions.
++4. No `ANTHROPIC_API_KEY` required for offline operation (golden intents bypass the resolver).
++5. The demo's `AS_OF_DATE` appears as a literal in exactly one place, `src/semantic/constants.py`;
++   no metadata artifact restates it. (Grepping for the date here would put the literal in this
++   file and break the rule it describes.)
++
++---
++
++## Related Artifacts
++
++- **Phase 1 (Technical Metadata):** `01_technical_metadata.json` — SAP DDIC field mappings, shows *where* the data lives
++- **Phase 2 (Standardized Metadata):** `02_standardized_metadata.json` — grain declarations, prevents the 88.5% error
++- **Phase 3 (Glossary + Bindings):** `03_glossary.yml`, `03_column_bindings.yml` — maps business terms to columns
++- **Phase 4 (Process Model):** `04_process_model.yml` — the 12 phases and variance rule, makes "why" computable
++- **Phase 5 (Semantic Model):** `05_semantic_model.yml` — executable metric definitions with exclusions
++- **Phase 6 (Data Quality):** `06_dq_rules.yml` — 6 dimension rules with trust badge, gates low-quality results
++- **Phase 7 (Catalog):** `07_catalog_asset.json` — governance metadata for compliance and discovery
++
++---
++
++## Sign-Off
++
++By approving this contract, the executive team agrees that:
++
++1. These four metrics, as defined here, are the official versions for reporting and decision-making.
++2. Any other calculation — even if numerically close — is unofficial and must not be used for performance evaluation or bonus determination.
++3. Changes to metric definitions require approval from the Supply Chain Analytics Council and must be versioned in this document.
++4. The semantic layer is the single source of truth for these metrics. Dashboard queries, ad-hoc analyses, and LLM-generated answers must all resolve through the governed semantic model.
++
++**Approved by:**
++
++- Chief Supply Chain Officer: _________________ Date: _______
++- VP Supply Chain: _________________ Date: _______
++- VP Manufacturing: _________________ Date: _______
++- VP Quality: _________________ Date: _______
++- Chief Data Officer: _________________ Date: _______
++
++**Next Review:** 2026-11-01 (quarterly)
+diff --git a/metadata/01_technical_metadata.json b/metadata/01_technical_metadata.json
+new file mode 100644
+index 0000000..d18435a
+--- /dev/null
++++ b/metadata/01_technical_metadata.json
+@@ -0,0 +1,311 @@
++{
++  "description": "Phase 1 artifact: Technical metadata extracted from SAP DDIC (Data Dictionary). Maps raw SAP field names to their technical properties. Without this layer, an LLM cannot resolve 'when did it ship' to LIKP-WADAT_IST.",
++  "source_system": "SAP ERP 6.0 EHP8",
++  "extraction_date": "2026-08-01",
++  "extraction_method": "SE11 / SE16 metadata query",
++  "owner": "SAP Basis Team",
++  "steward": "Data Integration Lead",
++  "fields": [
++    {
++      "table": "VBAK",
++      "field": "VBELN",
++      "data_element": "VBELN_VA",
++      "domain": "VBELN",
++      "data_type": "CHAR",
++      "length": 10,
++      "is_key": true,
++      "is_nullable": false,
++      "source_system": "SAP SD",
++      "description": "Sales Document Number (Sales Order ID)",
++      "business_name": "Sales Order ID",
++      "target_column": "order_id"
++    },
++    {
++      "table": "VBAK",
++      "field": "KUNNR",
++      "data_element": "KUNNR",
++      "domain": "KUNNR",
++      "data_type": "CHAR",
++      "length": 10,
++      "is_key": false,
++      "is_nullable": false,
++      "source_system": "SAP SD",
++      "description": "Customer Number (Sold-to Party)",
++      "business_name": "Customer ID",
++      "target_column": "customer_id"
++    },
++    {
++      "table": "VBAK",
++      "field": "ERDAT",
++      "data_element": "ERDAT",
++      "domain": "ERDAT",
++      "data_type": "DATS",
++      "length": 8,
++      "is_key": false,
++      "is_nullable": false,
++      "source_system": "SAP SD",
++      "description": "Date on which the record was created (Order Entry Date)",
++      "business_name": "Order Date",
++      "target_column": "order_date"
++    },
++    {
++      "table": "VBEP",
++      "field": "EDATU",
++      "data_element": "EDATU",
++      "domain": "DATUM",
++      "data_type": "DATS",
++      "length": 8,
++      "is_key": false,
++      "is_nullable": true,
++      "source_system": "SAP SD",
++      "description": "Requested Delivery Date / Promised Delivery Date",
++      "business_name": "Promised Delivery Date",
++      "target_column": "promised_delivery_date"
++    },
++    {
++      "table": "LIKP",
++      "field": "WADAT_IST",
++      "data_element": "WADAT_IST",
++      "domain": "DATUM",
++      "data_type": "DATS",
++      "length": 8,
++      "is_key": false,
++      "is_nullable": true,
++      "source_system": "SAP LE-SHP",
++      "description": "Actual Goods Movement Date (Goods Issue Date). THIS IS THE UNGUESSABLE FIELD NAME an LLM cannot resolve without technical metadata.",
++      "business_name": "Goods Issue Date",
++      "target_column": "goods_issue_date"
++    },
++    {
++      "table": "LIKP",
++      "field": "LFART",
++      "data_element": "LFART",
++      "domain": "LFART",
++      "data_type": "CHAR",
++      "length": 4,
++      "is_key": false,
++      "is_nullable": false,
++      "source_system": "SAP LE-SHP",
++      "description": "Delivery Type",
++      "business_name": "Delivery Type",
++      "target_column": "delivery_type"
++    },
++    {
++      "table": "AFKO",
++      "field": "AUFNR",
++      "data_element": "AUFNR",
++      "domain": "AUFNR",
++      "data_type": "CHAR",
++      "length": 12,
++      "is_key": true,
++      "is_nullable": false,
++      "source_system": "SAP PP",
++      "description": "Production Order Number",
++      "business_name": "Production Order ID",
++      "target_column": "production_order_id"
++    },
++    {
++      "table": "AFKO",
++      "field": "GSTRP",
++      "data_element": "GSTRP",
++      "domain": "DATUM",
++      "data_type": "DATS",
++      "length": 8,
++      "is_key": false,
++      "is_nullable": true,
++      "source_system": "SAP PP",
++      "description": "Scheduled Start Date (Basic)",
++      "business_name": "Scheduled Start Date",
++      "target_column": "scheduled_start_date"
++    },
++    {
++      "table": "AFKO",
++      "field": "GLTRP",
++      "data_element": "GLTRP",
++      "domain": "DATUM",
++      "data_type": "DATS",
++      "length": 8,
++      "is_key": false,
++      "is_nullable": true,
++      "source_system": "SAP PP",
++      "description": "Scheduled Finish Date (Basic)",
++      "business_name": "Scheduled Finish Date",
++      "target_column": "scheduled_finish_date"
++    },
++    {
++      "table": "AFRU",
++      "field": "BUDAT",
++      "data_element": "BUDAT",
++      "domain": "DATUM",
++      "data_type": "DATS",
++      "length": 8,
++      "is_key": false,
++      "is_nullable": false,
++      "source_system": "SAP PP",
++      "description": "Posting Date (Operation Confirmation Date)",
++      "business_name": "Production Confirm Date",
++      "target_column": "prod_confirm_date"
++    },
++    {
++      "table": "QALS",
++      "field": "VDATUM",
++      "data_element": "VDATUM",
++      "domain": "DATUM",
++      "data_type": "DATS",
++      "length": 8,
++      "is_key": false,
++      "is_nullable": true,
++      "source_system": "SAP QM",
++      "description": "Usage Decision Date (QM Inspection Decision Date)",
++      "business_name": "QM Decision Date",
++      "target_column": "qm_decision_date"
++    },
++    {
++      "table": "QALS",
++      "field": "VBEWK",
++      "data_element": "QVBEWK",
++      "domain": "QVBEWK",
++      "data_type": "CHAR",
++      "length": 1,
++      "is_key": false,
++      "is_nullable": true,
++      "source_system": "SAP QM",
++      "description": "Usage Decision Code (A=Accept, R=Reject, W=Rework)",
++      "business_name": "Usage Decision",
++      "target_column": "usage_decision"
++    },
++    {
++      "table": "MKPF",
++      "field": "BUDAT",
++      "data_element": "BUDAT",
++      "domain": "DATUM",
++      "data_type": "DATS",
++      "length": 8,
++      "is_key": false,
++      "is_nullable": false,
++      "source_system": "SAP MM",
++      "description": "Posting Date in the Document (Goods Receipt Date)",
++      "business_name": "Goods Receipt Date",
++      "target_column": "gr_date"
++    },
++    {
++      "table": "MSEG",
++      "field": "BUDAT",
++      "data_element": "BUDAT",
++      "domain": "DATUM",
++      "data_type": "DATS",
++      "length": 8,
++      "is_key": false,
++      "is_nullable": false,
++      "source_system": "SAP MM",
++      "description": "Posting Date in the Document (Material Movement Date)",
++      "business_name": "Material Issue Date",
++      "target_column": "material_issue_date"
++    },
++    {
++      "table": "MSEG",
++      "field": "BWART",
++      "data_element": "BWART",
++      "domain": "BWART",
++      "data_type": "CHAR",
++      "length": 3,
++      "is_key": false,
++      "is_nullable": false,
++      "source_system": "SAP MM",
++      "description": "Movement Type (e.g. 261=Goods Issue, 101=Goods Receipt)",
++      "business_name": "Movement Type",
++      "target_column": "movement_type"
++    },
++    {
++      "table": "VTTK",
++      "field": "DPTBG",
++      "data_element": "DPTBG",
++      "domain": "DATUM",
++      "data_type": "DATS",
++      "length": 8,
++      "is_key": false,
++      "is_nullable": true,
++      "source_system": "SAP TM",
++      "description": "Shipment Dispatch Date (Start of Transportation)",
++      "business_name": "Shipment Date",
++      "target_column": "shipment_date"
++    },
++    {
++      "table": "VBRK",
++      "field": "FKDAT",
++      "data_element": "FKDAT",
++      "domain": "DATUM",
++      "data_type": "DATS",
++      "length": 8,
++      "is_key": false,
++      "is_nullable": false,
++      "source_system": "SAP SD",
++      "description": "Billing Date / Invoice Date",
++      "business_name": "Invoice Date",
++      "target_column": "invoice_date"
++    },
++    {
++      "table": "VBAK",
++      "field": "AUGRU",
++      "data_element": "AUGRU",
++      "domain": "AUGRU",
++      "data_type": "CHAR",
++      "length": 3,
++      "is_key": false,
++      "is_nullable": true,
++      "source_system": "SAP SD",
++      "description": "Order Reason (e.g. promotion, replacement, expedite)",
++      "business_name": "Order Reason",
++      "target_column": "order_reason"
++    },
++    {
++      "table": "VBAK",
++      "field": "VKORG",
++      "data_element": "VKORG",
++      "domain": "VKORG",
++      "data_type": "CHAR",
++      "length": 4,
++      "is_key": false,
++      "is_nullable": false,
++      "source_system": "SAP SD",
++      "description": "Sales Organization",
++      "business_name": "Sales Organization",
++      "target_column": "sales_org"
++    },
++    {
++      "table": "LIKP",
++      "field": "VSTEL",
++      "data_element": "VSTEL",
++      "domain": "VSTEL",
++      "data_type": "CHAR",
++      "length": 4,
++      "is_key": false,
++      "is_nullable": false,
++      "source_system": "SAP LE-SHP",
++      "description": "Shipping Point / Dispatch Point",
++      "business_name": "Shipping Point",
++      "target_column": "shipping_point"
++    }
++  ],
++  "notes": [
++    "WADAT_IST is the canonical example of why technical metadata is necessary: 'when did it ship' cannot be resolved to LIKP-WADAT_IST without this layer.",
++    "Many SAP fields have generic names (BUDAT appears in AFRU, MKPF, MSEG with different business meanings). Context from the table name is essential.",
++    "DATS fields are stored as YYYYMMDD character strings in SAP; the staging model casts them to proper DATE types.",
++    "This extract is illustrative; a production semantic layer would include all fields from the relevant tables, versioned and refreshed quarterly as the data model evolves."
++  ],
++  "lineage": {
++    "upstream": [
++      "SAP ECC Production System",
++      "SAP BW Extractors (2LIS_*)",
++      "Data Lake Bronze Layer"
++    ],
++    "downstream": [
++      "DuckDB Warehouse (sql/02_staging_model.sql)",
++      "Semantic Layer (metadata/05_semantic_model.yml)",
++      "BI Dashboards",
++      "Natural Language Query Interface"
++    ]
++  },
++  "approval_state": "approved",
++  "version": "1.0"
++}
+diff --git a/metadata/02_standardized_metadata.json b/metadata/02_standardized_metadata.json
+new file mode 100644
+index 0000000..51d0f49
+--- /dev/null
++++ b/metadata/02_standardized_metadata.json
+@@ -0,0 +1,279 @@
++{
++  "description": "Phase 2 artifact: Standardized metadata with declared grain per table. This layer maps raw SAP field names to canonical business names and explicitly declares the grain of each fact table. The grain declaration is what prevents the split-delivery fan-out that inflates OTD from 87.3% to 88.5%.",
++  "owner": "Data Engineering Team",
++  "steward": "Data Architecture Lead",
++  "last_reviewed": "2026-08-01",
++  "approval_state": "approved",
++  "version": "1.0",
++
++  "grain_declarations": [
++    {
++      "table": "fact_order_delivery",
++      "grain": "order",
++      "primary_key": "order_id",
++      "description": "One row per customer sales order. All delivery legs collapsed to the order grain via max(delivery_date). This is the grain for on-time delivery measurement.",
++      "enforcement": "Test test_fact_is_one_row_per_order asserts count(*) = count(DISTINCT order_id). Any fan-out from split deliveries or joins would violate this and fail the test.",
++      "why_this_grain_matters": "6 orders ship in two legs (deliveries_raw has 2 rows for SO-1009, SO-1012, SO-1014, SO-1016, SO-1017, SO-1018). Measuring OTD at delivery-leg grain double-counts split shipments and produces 88.52% instead of 87.27%. The semantic model declares grain: order and the validator rejects delivery-grain queries.",
++      "row_count": 132,
++      "unique_keys": 132
++    },
++    {
++      "table": "fact_production_order",
++      "grain": "production_order",
++      "primary_key": "production_order_id",
++      "description": "One row per production order. Used for manufacturing schedule adherence and first-pass yield metrics.",
++      "enforcement": "Test test_production_order_grain asserts count(*) = count(DISTINCT production_order_id).",
++      "why_this_grain_matters": "Some orders have no production order (e.g. SO-1015, make-to-stock). Measuring order-grain metrics by joining through production orders would silently drop those orders and inflate OTD. The semantic model uses LEFT JOIN and marks the join cardinality as many_to_one.",
++      "row_count": 131
++    },
++    {
++      "table": "dim_process_phase",
++      "grain": "phase",
++      "primary_key": "phase_seq",
++      "description": "Literal VALUES table with 12 process phases and their standard durations. This is the source of truth for all phase duration constants.",
++      "row_count": 12
++    }
++  ],
++
++  "field_mappings": [
++    {
++      "source_table": "VBAK",
++      "source_field": "VBELN",
++      "canonical_name": "order_id",
++      "target_table": "fact_order_delivery",
++      "target_column": "order_id",
++      "data_type": "VARCHAR",
++      "is_dimension": true,
++      "is_measure": false,
++      "transformation": "Direct mapping, no transformation"
++    },
++    {
++      "source_table": "VBAK",
++      "source_field": "KUNNR",
++      "canonical_name": "customer_id",
++      "target_table": "fact_order_delivery",
++      "target_column": "customer_id",
++      "data_type": "VARCHAR",
++      "is_dimension": true,
++      "is_measure": false,
++      "transformation": "Direct mapping"
++    },
++    {
++      "source_table": "VBAK",
++      "source_field": "ERDAT",
++      "canonical_name": "order_date",
++      "target_table": "fact_order_delivery",
++      "target_column": "order_date",
++      "data_type": "DATE",
++      "is_dimension": false,
++      "is_measure": false,
++      "transformation": "CAST(VBAK-ERDAT AS DATE)"
++    },
++    {
++      "source_table": "VBEP",
++      "source_field": "EDATU",
++      "canonical_name": "promised_delivery_date",
++      "target_table": "fact_order_delivery",
++      "target_column": "promised_delivery_date",
++      "data_type": "DATE",
++      "is_dimension": false,
++      "is_measure": false,
++      "transformation": "CAST(VBEP-EDATU AS DATE). If an order is re-promised, the CURRENT promise is used, not the original."
++    },
++    {
++      "source_table": "LIKP",
++      "source_field": "WADAT_IST",
++      "canonical_name": "goods_issue_date",
++      "target_table": "fact_order_delivery",
++      "target_column": "goods_issue_date",
++      "data_type": "DATE",
++      "is_dimension": false,
++      "is_measure": false,
++      "transformation": "CAST(LIKP-WADAT_IST AS DATE). For split deliveries, min(goods_issue_date) across legs."
++    },
++    {
++      "source_table": "deliveries_raw",
++      "source_field": "delivery_date",
++      "canonical_name": "final_delivery_date",
++      "target_table": "fact_order_delivery",
++      "target_column": "final_delivery_date",
++      "data_type": "DATE",
++      "is_dimension": false,
++      "is_measure": false,
++      "transformation": "max(delivery_date) across all delivery legs for the order. An order is delivered when its LAST leg arrives. This is the split-delivery collapse that enforces order grain."
++    },
++    {
++      "source_table": "AFKO",
++      "source_field": "AUFNR",
++      "canonical_name": "production_order_id",
++      "target_table": "fact_order_delivery",
++      "target_column": "production_order_id",
++      "data_type": "VARCHAR",
++      "is_dimension": true,
++      "is_measure": false,
++      "transformation": "LEFT JOIN to stg_production_orders. NULL for make-to-stock orders (e.g. SO-1015)."
++    },
++    {
++      "source_table": "AFRU",
++      "source_field": "BUDAT",
++      "canonical_name": "prod_confirm_date",
++      "target_table": "fact_order_delivery",
++      "target_column": "prod_confirm_date",
++      "data_type": "DATE",
++      "is_dimension": false,
++      "is_measure": false,
++      "transformation": "CAST(AFRU-BUDAT AS DATE). Phase 5 timestamp."
++    },
++    {
++      "source_table": "QALS",
++      "source_field": "VDATUM",
++      "canonical_name": "qm_first_decision_date",
++      "target_table": "fact_order_delivery",
++      "target_column": "qm_first_decision_date",
++      "data_type": "DATE",
++      "is_dimension": false,
++      "is_measure": false,
++      "transformation": "min(QALS-VDATUM WHERE decision_seq = '1'). For first-pass yield calculation."
++    },
++    {
++      "source_table": "QALS",
++      "source_field": "VDATUM",
++      "canonical_name": "qm_final_decision_date",
++      "target_table": "fact_order_delivery",
++      "target_column": "qm_final_decision_date",
++      "data_type": "DATE",
++      "is_dimension": false,
++      "is_measure": false,
++      "transformation": "max(QALS-VDATUM). For reworked lots (e.g. QL-4004), this is the FINAL decision date, not the first. Phase 6 timestamp for variance calculation uses the final decision."
++    },
++    {
++      "source_table": "MKPF",
++      "source_field": "BUDAT",
++      "canonical_name": "gr_date",
++      "target_table": "fact_order_delivery",
++      "target_column": "gr_date",
++      "data_type": "DATE",
++      "is_dimension": false,
++      "is_measure": false,
++      "transformation": "CAST(MKPF-BUDAT AS DATE) for goods receipt movement. Phase 7 timestamp."
++    },
++    {
++      "source_table": "VTTK",
++      "source_field": "DPTBG",
++      "canonical_name": "shipment_date",
++      "target_table": "fact_order_delivery",
++      "target_column": "shipment_date",
++      "data_type": "DATE",
++      "is_dimension": false,
++      "is_measure": false,
++      "transformation": "CAST(VTTK-DPTBG AS DATE). Phase 10 timestamp."
++    },
++    {
++      "source_table": "VBRK",
++      "source_field": "FKDAT",
++      "canonical_name": "invoice_date",
++      "target_table": "fact_order_delivery",
++      "target_column": "invoice_date",
++      "data_type": "DATE",
++      "is_dimension": false,
++      "is_measure": false,
++      "transformation": "MODELED as final_delivery_date + billing_standard_duration (1 day). Not extracted from raw billing documents."
++    }
++  ],
++
++  "conformed_dimensions": [
++    {
++      "dimension": "region",
++      "description": "Geographic region (country or country group)",
++      "allowed_values": ["IN", "US", "DE", "CN", "BR"],
++      "source": "Master data / organizational hierarchy",
++      "used_in_tables": ["fact_order_delivery", "fact_production_order"],
++      "is_slowly_changing": false
++    },
++    {
++      "dimension": "plant",
++      "description": "Manufacturing plant or fulfillment center",
++      "allowed_values": ["1010", "1710", "2020", "3030"],
++      "source": "SAP organizational structure",
++      "used_in_tables": ["fact_order_delivery", "fact_production_order"],
++      "is_slowly_changing": false
++    },
++    {
++      "dimension": "warehouse",
++      "description": "Finished goods warehouse",
++      "source": "SAP EWM / LE configuration",
++      "used_in_tables": ["fact_order_delivery"],
++      "is_slowly_changing": false
++    },
++    {
++      "dimension": "carrier",
++      "description": "Transportation carrier for final delivery",
++      "allowed_values": ["BLUEDART", "FEDEX", "DHL", "UPS", "MAERSK"],
++      "source": "Carrier master data",
++      "used_in_tables": ["fact_order_delivery"],
++      "is_slowly_changing": false
++    },
++    {
++      "dimension": "order_status",
++      "description": "Current status of the sales order",
++      "allowed_values": ["DLVD", "IN_TRANSIT", "CANC", "OPEN"],
++      "source": "SAP SD order header",
++      "used_in_tables": ["fact_order_delivery"],
++      "is_slowly_changing": false
++    },
++    {
++      "dimension": "delay_attribution_phase",
++      "description": "Manufacturing phase that caused a late order (derived column)",
++      "allowed_values": [
++        "demand_capture", "mrp_planning", "production_release", "material_staging",
++        "production_execution", "quality_inspection", "goods_receipt", "picking_packing",
++        "goods_issue", "transportation", "delivery_confirmation"
++      ],
++      "source": "Computed from per-phase variances in fact_order_delivery",
++      "used_in_tables": ["fact_order_delivery"],
++      "is_slowly_changing": false,
++      "computation_rule": "argmax(variance_days) over phases 1-11, evaluated only for late delivered eligible orders"
++    }
++  ],
++
++  "join_paths": [
++    {
++      "from_table": "fact_order_delivery",
++      "to_table": "fact_production_order",
++      "join_type": "LEFT",
++      "cardinality": "many_to_one",
++      "join_key": "production_order_id",
++      "rationale": "Some orders have no production order (make-to-stock). An INNER JOIN would silently drop those orders and inflate OTD. The semantic model declares this join with cardinality: many_to_one so the validator can detect fan-out."
++    },
++    {
++      "from_table": "fact_order_delivery",
++      "to_table": "deliveries_raw",
++      "join_type": "ONE_TO_MANY",
++      "cardinality": "one_to_many",
++      "join_key": "order_id",
++      "rationale": "FAN-OUT HAZARD. 6 orders ship in two legs. Joining here without re-aggregating to order grain yields 88.52% instead of 87.27%. The semantic model declares this join path as one_to_many and marks the delivery_id dimension as queryable_at_grain: delivery, so the no_fanout gate rejects it for order-grain metrics."
++    }
++  ],
++
++  "data_quality_notes": [
++    "fact_order_delivery enforces order grain via max(delivery_date) aggregation before the final JOIN. Test test_fact_is_one_row_per_order validates this.",
++    "Cancelled orders (order_status = 'CANC') have NULL final_delivery_date and are excluded from OTD denominator.",
++    "Not-yet-due orders (promised_delivery_date > AS_OF_DATE) are excluded via is_eligible flag.",
++    "SO-1013 is in-transit with final_delivery_date = NULL; it must not count as late because it is not yet due.",
++    "SO-1015 is make-to-stock with production_order_id = NULL; it must survive the LEFT JOIN and count as eligible.",
++    "SO-1009 has split_delivery = 'mixed': leg A delivered on time (2026-07-16), leg B late (2026-07-20). Order is late using max(delivery_date) = 2026-07-20."
++  ],
++
++  "lineage": {
++    "upstream": [
++      "01_technical_metadata.json (SAP DDIC field definitions)",
++      "data/*_raw.csv (committed sample data)",
++      "sql/02_staging_model.sql (grain-enforcing SQL)"
++    ],
++    "downstream": [
++      "metadata/05_semantic_model.yml (entity and metric definitions)",
++      "src/semantic/validator.py (grain_matches gate)",
++      "tests/test_warehouse.py (grain enforcement tests)"
++    ]
++  }
++}
+diff --git a/metadata/03_column_bindings.yml b/metadata/03_column_bindings.yml
+new file mode 100644
+index 0000000..87b3048
+--- /dev/null
++++ b/metadata/03_column_bindings.yml
+@@ -0,0 +1,269 @@
++# Phase 3 artifact: Column bindings mapping glossary terms to physical columns
++#
++# This file binds business terms from 03_glossary.yml to actual columns in
++# fact_order_delivery and fact_production_order. These bindings enable the
++# resolver to translate natural language filters and dimensions into SQL.
++#
++# CRITICAL: All columns referenced here must exist in the warehouse.
++# A test validates every binding against PRAGMA table_info().
++#
++# scope: business  -- the term is defined in 03_glossary.yml, so a user can name it
++#                     in natural language and the resolver can bind it.
++# scope: internal  -- a physical column the compiler reads (variances, flags, raw phase
++#                     timestamps). Deliberately NOT in the glossary: exposing 27 more
++#                     terms to the resolver widens the guess space without answering a
++#                     question anyone asks. A test enforces that every business-scoped
++#                     binding has a glossary entry, so this stays a decision rather
++#                     than drift.
++
++bindings:
++  # Metrics (computed in semantic model, not direct column bindings)
++  # On-Time Delivery %, Manufacturing Schedule Adherence %, First Pass Yield %
++  # are expressed as expressions in 05_semantic_model.yml
++
++  # Order dimensions and attributes
++  - term: Sales Order
++    table: fact_order_delivery
++    column: order_id
++    scope: business
++
++  - term: Region
++    table: fact_order_delivery
++    column: region
++    scope: business
++
++  - term: Plant
++    table: fact_order_delivery
++    column: plant
++    scope: business
++
++  - term: Warehouse
++    table: fact_order_delivery
++    column: warehouse
++    scope: business
++
++  - term: Carrier
++    table: fact_order_delivery
++    column: carrier
++    scope: business
++
++  - term: Order Status
++    table: fact_order_delivery
++    column: order_status
++    scope: business
++
++  - term: Promised Delivery Date
++    table: fact_order_delivery
++    column: promised_delivery_date
++    scope: business
++
++  - term: Delivery Date
++    table: fact_order_delivery
++    column: final_delivery_date
++    scope: business
++
++  - term: Delay Attribution Phase
++    table: fact_order_delivery
++    column: delay_attribution_phase
++    scope: business
++
++  # Production order linkage
++  - term: Production Order
++    table: fact_order_delivery
++    column: production_order_id
++    scope: business
++
++  # Production order attributes
++  - term: Production Order
++    table: fact_production_order
++    column: production_order_id
++    scope: business
++
++  - term: Sales Order
++    table: fact_production_order
++    column: order_id
++    scope: business
++
++  # Phase timestamps (order grain)
++  - term: MRP Date
++    table: fact_order_delivery
++    column: mrp_date
++    scope: internal
++
++  - term: Production Release Date
++    table: fact_order_delivery
++    column: release_date
++    scope: internal
++
++  - term: Material Issue Date
++    table: fact_order_delivery
++    column: material_issue_date
++    scope: internal
++
++  - term: Production Confirm Date
++    table: fact_order_delivery
++    column: prod_confirm_date
++    scope: internal
++
++  - term: QM First Decision Date
++    table: fact_order_delivery
++    column: qm_first_decision_date
++    scope: internal
++
++  - term: QM Final Decision Date
++    table: fact_order_delivery
++    column: qm_final_decision_date
++    scope: internal
++
++  - term: Goods Receipt Date
++    table: fact_order_delivery
++    column: gr_date
++    scope: internal
++
++  - term: Picking Date
++    table: fact_order_delivery
++    column: picking_date
++    scope: internal
++
++  - term: Goods Issue Date
++    table: fact_order_delivery
++    column: goods_issue_date
++    scope: internal
++
++  - term: Shipment Date
++    table: fact_order_delivery
++    column: shipment_date
++    scope: internal
++
++  - term: Invoice Date
++    table: fact_order_delivery
++    column: invoice_date
++    scope: internal
++
++  # Variance columns (actual - standard duration per phase)
++  - term: MRP Variance
++    table: fact_order_delivery
++    column: var_mrp
++    scope: internal
++
++  - term: Release Variance
++    table: fact_order_delivery
++    column: var_release
++    scope: internal
++
++  - term: Material Issue Variance
++    table: fact_order_delivery
++    column: var_issue
++    scope: internal
++
++  - term: Production Confirm Variance
++    table: fact_order_delivery
++    column: var_confirm
++    scope: internal
++
++  - term: QM Variance
++    table: fact_order_delivery
++    column: var_qm
++    scope: internal
++
++  - term: Goods Receipt Variance
++    table: fact_order_delivery
++    column: var_gr
++    scope: internal
++
++  - term: Picking Variance
++    table: fact_order_delivery
++    column: var_picking
++    scope: internal
++
++  - term: Goods Issue Variance
++    table: fact_order_delivery
++    column: var_goods_issue
++    scope: internal
++
++  - term: Shipment Variance
++    table: fact_order_delivery
++    column: var_shipment
++    scope: internal
++
++  # Computed flags and metrics
++  - term: Is Delivered
++    table: fact_order_delivery
++    column: is_delivered
++    scope: internal
++
++  - term: Is Eligible
++    table: fact_order_delivery
++    column: is_eligible
++    scope: internal
++
++  - term: Is On Time
++    table: fact_order_delivery
++    column: is_on_time
++    scope: internal
++
++  - term: Delay Days
++    table: fact_order_delivery
++    column: delay_days
++    scope: internal
++
++  - term: Available Slack Days
++    table: fact_order_delivery
++    column: available_slack_days
++    scope: internal
++
++  # Production order phase timestamps
++  - term: MRP Date
++    table: fact_production_order
++    column: mrp_date
++    scope: internal
++
++  - term: Production Release Date
++    table: fact_production_order
++    column: release_date
++    scope: internal
++
++  - term: Scheduled Finish Date
++    table: fact_production_order
++    column: scheduled_finish_date
++    scope: internal
++
++  - term: Material Issue Date
++    table: fact_production_order
++    column: material_issue_date
++    scope: internal
++
++  - term: Production Confirm Date
++    table: fact_production_order
++    column: confirm_date
++    scope: internal
++
++  - term: Goods Receipt Date
++    table: fact_production_order
++    column: gr_date
++    scope: internal
++
++  - term: QM First Decision Date
++    table: fact_production_order
++    column: qm_first_decision_date
++    scope: internal
++
++  - term: QM Final Decision Date
++    table: fact_production_order
++    column: qm_final_decision_date
++    scope: internal
++
++  - term: Is On Schedule
++    table: fact_production_order
++    column: is_on_schedule
++    scope: internal
++
++owner: Data Engineering Team
++steward: Data Governance Council
++last_reviewed: 2026-08-01
++approval_state: approved
++version: 1.0
++notes: >
++  Bindings are validated at build time against the actual warehouse schema.
++  Any binding referencing a non-existent column will cause test_bindings_reference_real_fact_columns
++  to fail, preventing deployment of broken metadata.
+diff --git a/metadata/03_glossary.yml b/metadata/03_glossary.yml
+new file mode 100644
+index 0000000..acfb3fa
+--- /dev/null
++++ b/metadata/03_glossary.yml
+@@ -0,0 +1,322 @@
++# Phase 3 artifact: Business glossary with synonyms for natural language resolution
++#
++# This glossary maps business terminology to technical metadata. The synonyms
++# list is load-bearing: it is what enables NL queries like "OTD for India last
++# month" to resolve to the correct metric and filters. Without comprehensive
++# synonyms, the resolver cannot map user vocabulary to governed definitions.
++
++terms:
++  - term: On-Time Delivery %
++    definition: >
++      Share of eligible customer orders delivered on or before the promised
++      delivery date. Measured at order grain (one row per order_id). An order
++      counts as delivered only when its final delivery leg arrives. Excludes
++      cancelled orders and orders not yet due.
++    synonyms:
++      - OTD
++      - on time delivery
++      - on-time delivery
++      - delivery performance
++      - delivery reliability
++      - promise adherence
++      - OTIF
++      - on time in full
++    owner: VP Supply Chain
++    steward: Supply Chain Analytics Lead
++    data_type: percentage
++    calculation: (delivered_on_time / eligible_orders) * 100
++
++  - term: Manufacturing Schedule Adherence %
++    definition: >
++      Share of production orders confirmed on or before the scheduled finish
++      date. Measures manufacturing execution discipline against the planned
++      schedule.
++    synonyms:
++      - schedule adherence
++      - schedule compliance
++      - schedule performance
++      - production adherence
++      - manufacturing adherence
++      - on-schedule production
++    owner: VP Manufacturing
++    steward: Production Planning Lead
++    data_type: percentage
++    calculation: (confirmed_on_schedule / released_orders) * 100
++
++  - term: First Pass Yield %
++    definition: >
++      Share of production orders accepted at the first quality inspection
++      decision. Measures quality right-first-time. Excludes rework re-inspections
++      (decision_seq > 1) to prevent double-counting.
++    synonyms:
++      - FPY
++      - first pass yield
++      - first time right
++      - FTR
++      - quality yield
++      - right first time
++      - initial quality
++    owner: VP Quality
++    steward: Quality Analytics Lead
++    data_type: percentage
++    calculation: (first_decision_accepted / total_first_inspections) * 100
++
++  - term: Sales Order
++    definition: >
++      Customer order entered in SAP SD. Uniquely identified by order_id.
++      The primary business object for order-to-cash processes.
++    synonyms:
++      - order
++      - customer order
++      - SO
++      - sales order
++      - sales doc
++    owner: VP Sales
++    steward: Sales Operations Lead
++    primary_key: order_id
++    source_system: SAP SD
++    sap_table: VBAK
++
++  - term: Production Order
++    definition: >
++      Manufacturing order released in SAP PP. Links a sales order to
++      production execution. Not all sales orders have production orders
++      (e.g. make-to-stock items like SO-1015).
++    synonyms:
++      - prod order
++      - manufacturing order
++      - work order
++      - production work order
++    owner: VP Manufacturing
++    steward: Production Planning Lead
++    primary_key: production_order_id
++    source_system: SAP PP
++    sap_table: AFKO
++
++  - term: Inspection Lot
++    definition: >
++      Quality inspection batch in SAP QM. Records usage decisions (accept,
++      reject, rework). Reworked lots have multiple decisions; first-pass
++      yield measures decision_seq = 1 only.
++    synonyms:
++      - inspection lot
++      - QM lot
++      - quality lot
++      - inspection batch
++      - quality inspection
++    owner: VP Quality
++    steward: Quality Analytics Lead
++    primary_key: inspection_lot_id
++    source_system: SAP QM
++    sap_table: QALS
++
++  - term: Region
++    definition: >
++      Geographic region where the order is fulfilled. Maps to country or
++      country group for reporting purposes.
++    synonyms:
++      - country
++      - geography
++      - region
++      - market
++    owner: VP Global Operations
++    steward: Master Data Team
++    data_type: categorical
++    allowed_values:
++      - IN
++      - US
++      - DE
++      - CN
++      - BR
++    value_labels:
++      IN: India
++      US: United States
++      DE: Germany
++      CN: China
++      BR: Brazil
++
++  - term: Plant
++    definition: >
++      Manufacturing plant or distribution center. SAP organizational unit
++      where production or fulfillment occurs.
++    synonyms:
++      - plant
++      - facility
++      - manufacturing plant
++      - production facility
++      - site
++    owner: VP Global Operations
++    steward: Master Data Team
++    data_type: categorical
++    allowed_values:
++      - 1010
++      - 1710
++      - 2020
++      - 3030
++    value_labels:
++      1010: India Plant
++      1710: US Plant
++      2020: Germany Plant
++      3030: China Plant
++
++  - term: Warehouse
++    definition: >
++      Finished goods warehouse or distribution center. May be co-located
++      with a plant or operate independently.
++    synonyms:
++      - warehouse
++      - WH
++      - distribution center
++      - DC
++      - fulfillment center
++      - depot
++    owner: VP Logistics
++    steward: Warehouse Operations Lead
++    data_type: categorical
++    primary_key: warehouse
++
++  - term: Carrier
++    definition: >
++      Transportation carrier responsible for final-mile delivery to customer.
++    synonyms:
++      - carrier
++      - shipper
++      - logistics provider
++      - freight carrier
++      - courier
++      - transporter
++    owner: VP Logistics
++    steward: Transportation Planning Lead
++    data_type: categorical
++    allowed_values:
++      - BLUEDART
++      - FEDEX
++      - DHL
++      - UPS
++      - MAERSK
++
++  - term: Promised Delivery Date
++    definition: >
++      Date the customer was promised delivery. Used as the baseline for
++      on-time delivery measurement. If an order is re-promised, the current
++      (latest) promise is used, not the original.
++    synonyms:
++      - promise date
++      - committed delivery date
++      - delivery promise
++      - due date
++      - requested delivery date
++      - RDD
++    owner: VP Sales
++    steward: Order Management Lead
++    data_type: date
++    sap_field: VBEP-EDATU
++
++  - term: Delivery Date
++    definition: >
++      Actual date the order was delivered to the customer. For split deliveries,
++      this is the date of the LAST leg (max across all delivery legs). NULL
++      if the order is still in transit.
++    synonyms:
++      - delivery date
++      - actual delivery date
++      - delivered date
++      - completion date
++      - arrival date
++      - received date
++    owner: VP Logistics
++    steward: Delivery Operations Lead
++    data_type: date
++    sap_field: LIKP-WADAT
++
++  - term: Quality Inspection
++    definition: >
++      SAP QM process where finished goods are inspected and a usage decision
++      is recorded. Phase 6 in the 12-phase process model. Standard duration
++      1 day.
++    synonyms:
++      - QM
++      - quality check
++      - inspection
++      - quality control
++      - QC
++      - quality assurance
++      - QA
++      - quality management
++    owner: VP Quality
++    steward: Quality Analytics Lead
++    phase_seq: 6
++    standard_duration_days: 1
++
++  - term: Delay Attribution Phase
++    definition: >
++      The manufacturing phase that caused a late order. Computed as the phase
++      with the largest positive variance (actual_duration - standard_duration).
++      Evaluated only for orders that are eligible, delivered, and late.
++    synonyms:
++      - delay cause
++      - late reason
++      - delay reason
++      - attribution
++      - delay driver
++      - bottleneck phase
++      - constraint phase
++    owner: VP Supply Chain
++    steward: Process Excellence Lead
++    data_type: categorical
++    allowed_values:
++      - demand_capture
++      - mrp_planning
++      - production_release
++      - material_staging
++      - production_execution
++      - quality_inspection
++      - goods_receipt
++      - picking_packing
++      - goods_issue
++      - transportation
++      - delivery_confirmation
++
++  - term: Order Status
++    definition: >
++      Current status of the sales order. CANC (cancelled) orders are excluded
++      from on-time delivery denominator because they were never due.
++    synonyms:
++      - status
++      - order status
++      - delivery status
++      - fulfillment status
++    owner: VP Sales
++    steward: Order Management Lead
++    data_type: categorical
++    allowed_values:
++      - DLVD
++      - IN_TRANSIT
++      - CANC
++      - OPEN
++    value_labels:
++      DLVD: Delivered
++      IN_TRANSIT: In Transit
++      CANC: Cancelled
++      OPEN: Open / Not Started
++
++  - term: Eligible Orders
++    definition: >
++      Orders that should be counted in the on-time delivery denominator.
++      An order is eligible if it is not cancelled and its promised delivery
++      date is on or before the as-of date (not yet due orders are excluded).
++    synonyms:
++      - eligible
++      - in scope
++      - denominator orders
++      - countable orders
++      - due orders
++    owner: VP Supply Chain
++    steward: Supply Chain Analytics Lead
++    calculation: order_status != 'CANC' AND promised_delivery_date <= AS_OF_DATE
++
++owner: Chief Data Officer
++steward: Data Governance Council
++last_reviewed: 2026-08-01
++approval_state: approved
++version: 1.0
+diff --git a/metadata/04_process_model.yml b/metadata/04_process_model.yml
+new file mode 100644
+index 0000000..411c331
+--- /dev/null
++++ b/metadata/04_process_model.yml
+@@ -0,0 +1,174 @@
++# Phase 4 artifact: Manufacturing process model with standard durations
++#
++# This file defines the 12-phase Plan-to-Deliver process, baseline durations,
++# and the variance attribution rule that makes "why did OTD drop" computable.
++#
++# CRITICAL: standard_duration_days values must match dim_process_phase in
++# sql/02_staging_model.sql EXACTLY. A test compares them row by row.
++#
++# Phases 1-11 sum to 12 days (the delivery promise horizon).
++# All 12 phases sum to 13 days (billing follows delivery, cannot consume slack).
++
++phases:
++  - phase_seq: 1
++    phase_key: demand_capture
++    phase_name: Demand & order capture
++    sap_module: SAP SD
++    business_event: Sales order created
++    timestamp_field: order_date
++    standard_duration_days: 0
++    description: >
++      Customer order is received and entered into SAP SD. Zero-day event:
++      no production work occurs during this phase.
++
++  - phase_seq: 2
++    phase_key: mrp_planning
++    phase_name: Requirements planning
++    sap_module: SAP PP (MRP)
++    business_event: Planned order created
++    timestamp_field: mrp_date
++    standard_duration_days: 1
++    description: >
++      MRP run evaluates demand and creates planned orders to fulfill it.
++      Standard: 1 day from order entry to MRP execution.
++
++  - phase_seq: 3
++    phase_key: production_release
++    phase_name: Production order release
++    sap_module: SAP PP
++    business_event: Production order released
++    timestamp_field: prod_release_date
++    standard_duration_days: 1
++    description: >
++      Planned order is converted to a production order and released for execution.
++      Standard: 1 day from MRP to release.
++
++  - phase_seq: 4
++    phase_key: material_staging
++    phase_name: Material staging & issue
++    sap_module: SAP MM
++    business_event: Goods issue to production order
++    timestamp_field: material_issue_date
++    standard_duration_days: 1
++    description: >
++      Raw materials and components are staged and issued to the production order.
++      Standard: 1 day from release to material availability.
++
++  - phase_seq: 5
++    phase_key: production_execution
++    phase_name: Production execution
++    sap_module: SAP PP
++    business_event: Operation confirmed
++    timestamp_field: prod_confirm_date
++    standard_duration_days: 3
++    description: >
++      Manufacturing operations are executed and confirmed. Standard: 3 days
++      from material issue to production completion. Longest phase in the chain.
++
++  - phase_seq: 6
++    phase_key: quality_inspection
++    phase_name: Quality inspection
++    sap_module: SAP QM
++    business_event: Usage decision
++    timestamp_field: qm_final_decision_date
++    standard_duration_days: 1
++    description: >
++      Finished goods are inspected and a usage decision is recorded (accept,
++      reject, or rework). Standard: 1 day from production confirmation to
++      QM decision. For reworked lots, this is the FINAL decision date.
++
++  - phase_seq: 7
++    phase_key: goods_receipt
++    phase_name: Goods receipt to stock
++    sap_module: SAP MM / EWM
++    business_event: GR posted to unrestricted stock
++    timestamp_field: gr_date
++    standard_duration_days: 1
++    description: >
++      Accepted finished goods are posted to unrestricted-use inventory.
++      Standard: 1 day from QM decision to GR.
++
++  - phase_seq: 8
++    phase_key: picking_packing
++    phase_name: Picking & packing
++    sap_module: SAP EWM
++    business_event: Picking completed
++    timestamp_field: picking_date
++    standard_duration_days: 1
++    description: >
++      Order is picked from warehouse stock and packed for shipment.
++      Standard: 1 day from GR to picking complete.
++
++  - phase_seq: 9
++    phase_key: goods_issue
++    phase_name: Goods issue / dispatch
++    sap_module: SAP LE-SHP
++    business_event: Actual goods issue
++    timestamp_field: goods_issue_date
++    standard_duration_days: 0
++    description: >
++      Packed shipment is handed over to carrier and goods issue is posted.
++      Zero-day event: goods issue and picking occur in rapid succession.
++
++  - phase_seq: 10
++    phase_key: transportation
++    phase_name: Transportation
++    sap_module: SAP TM
++    business_event: Shipment dispatched
++    timestamp_field: shipment_date
++    standard_duration_days: 3
++    description: >
++      Carrier transports goods from warehouse to customer site. Standard: 3 days
++      from goods issue to delivery confirmation. This variance absorbs both
++      transportation and delivery_confirmation (phase 11, a zero-day POD event).
++
++  - phase_seq: 11
++    phase_key: delivery_confirmation
++    phase_name: Delivery confirmation
++    sap_module: SAP TM / LE
++    business_event: POD / delivery confirmed
++    timestamp_field: final_delivery_date
++    standard_duration_days: 0
++    description: >
++      Proof of delivery is received and the delivery is confirmed complete.
++      Zero-day event: the moment the customer accepts the shipment.
++
++  - phase_seq: 12
++    phase_key: billing
++    phase_name: Billing
++    sap_module: SAP SD
++    business_event: Invoice created
++    timestamp_field: invoice_date
++    standard_duration_days: 1
++    description: >
++      Invoice is created and sent to the customer. Standard: 1 day after
++      delivery confirmation. Billing follows delivery and cannot consume
++      delivery promise slack, so it is excluded from available_slack_days
++      computation (phases 1-11 only sum to 12).
++
++attribution:
++  rule: variance_argmax
++  description: >
++    Delay attribution identifies which phase caused an order to be late.
++    For each phase, variance = (actual_duration - standard_duration).
++    The phase with the largest positive variance is the attributed cause.
++  formula: delay_attribution_phase = argmax(variance_days) over phases 1-11
++  tie_breaking: earliest phase wins (lowest phase_seq)
++  scope: evaluated only for orders that are eligible, delivered, and late
++  exclusions:
++    - On-time orders return NULL (no delay to attribute)
++    - Not-yet-due orders return NULL (not late, pending)
++    - Cancelled orders return NULL (never delivered)
++    - Undelivered in-transit orders return NULL (not delivered)
++  notes:
++    - Phase 12 (billing) is excluded from attribution because it occurs after
++      the promised delivery date and cannot explain a delivery delay.
++    - A phase with no variance (actual = standard) cannot be the attributed
++      cause, even if all other phases are faster than standard.
++    - A phase that did not run (e.g. production for make-to-stock orders)
++      has variance = NULL and cannot be attributed.
++
++owner: VP Supply Chain Operations
++steward: Manufacturing Excellence Team
++last_reviewed: 2026-08-01
++approval_state: approved
+diff --git a/tests/test_metadata.py b/tests/test_metadata.py
+new file mode 100644
+index 0000000..f9311d2
+--- /dev/null
++++ b/tests/test_metadata.py
+@@ -0,0 +1,168 @@
++import json, yaml, pytest
++from src.semantic.constants import METADATA_DIR
++
++def _yaml(name):
++    with open(METADATA_DIR / name, encoding="utf-8") as f:
++        return yaml.safe_load(f)
++
++def _json(name):
++    with open(METADATA_DIR / name, encoding="utf-8") as f:
++        return json.load(f)
++
++ARTIFACTS = [
++    "00_kpi_contract.md", "01_technical_metadata.json", "02_standardized_metadata.json",
++    "03_glossary.yml", "03_column_bindings.yml", "04_process_model.yml",
++]
++
++@pytest.mark.parametrize("name", ARTIFACTS)
++def test_artifact_exists_and_is_nonempty(name):
++    p = METADATA_DIR / name
++    assert p.exists(), f"missing {name}"
++    assert len(p.read_text(encoding="utf-8").strip()) > 200
++
++@pytest.mark.parametrize("name", ARTIFACTS)
++def test_no_placeholders(name):
++    text = (METADATA_DIR / name).read_text(encoding="utf-8")
++    for bad in ("TBD", "TODO", "FIXME", "XXX", "<placeholder>"):
++        assert bad not in text, f"{name} contains {bad}"
++
++def test_process_model_has_12_phases():
++    phases = _yaml("04_process_model.yml")["phases"]
++    assert len(phases) == 12
++    assert [p["phase_seq"] for p in phases] == list(range(1, 13))
++
++def test_process_model_durations_match_the_warehouse():
++    """The YAML and dim_process_phase must not drift apart.
++
++    Phases 1-11 sum to 12, which is exactly what available_slack_days subtracts.
++    All 12 phases sum to 13: billing follows delivery, so it cannot consume slack
++    against the promised delivery date.
++    """
++    phases = _yaml("04_process_model.yml")["phases"]
++    to_delivery = sum(
++        p["standard_duration_days"] for p in phases if p["phase_seq"] <= 11
++    )
++    assert to_delivery == 12
++    assert sum(p["standard_duration_days"] for p in phases) == 13
++
++def test_process_model_agrees_with_dim_process_phase():
++    """Same durations, same phase_keys, same order as the built warehouse."""
++    import duckdb
++    from src import build_warehouse
++    from src.semantic.constants import DB_PATH
++    build_warehouse.build()
++    con = duckdb.connect(str(DB_PATH), read_only=True)
++    try:
++        rows = con.execute("""
++            SELECT phase_seq, phase_key, standard_duration_days
++            FROM dim_process_phase ORDER BY phase_seq
++        """).fetchall()
++    finally:
++        con.close()
++    phases = sorted(_yaml("04_process_model.yml")["phases"], key=lambda p: p["phase_seq"])
++    assert [(p["phase_seq"], p["phase_key"], p["standard_duration_days"])
++            for p in phases] == rows
++
++def test_process_model_covers_manufacturing_modules():
++    phases = _yaml("04_process_model.yml")["phases"]
++    modules = {p["sap_module"] for p in phases}
++    for required in ("SAP PP", "SAP QM", "SAP MM"):
++        assert any(required in m for m in modules), f"no phase from {required}"
++
++def test_glossary_has_synonyms_for_nl_resolution():
++    """Without synonyms the resolver cannot map user vocabulary to columns."""
++    terms = {t["term"]: t for t in _yaml("03_glossary.yml")["terms"]}
++    assert "On-Time Delivery %" in terms
++    otd = terms["On-Time Delivery %"]
++    assert {"otd", "on time delivery", "delivery performance"} <= {
++        s.lower() for s in otd["synonyms"]
++    }
++    region = terms["Region"]
++    assert "india" in {v.lower() for v in region["allowed_values"]} or \
++           "IN" in region["allowed_values"]
++
++def test_every_glossary_term_has_owner_and_steward():
++    for t in _yaml("03_glossary.yml")["terms"]:
++        assert t.get("owner"), f"{t['term']} has no owner"
++        assert t.get("steward"), f"{t['term']} has no steward"
++
++def test_bindings_reference_real_fact_columns():
++    import duckdb
++    from src import build_warehouse
++    from src.semantic.constants import DB_PATH
++    build_warehouse.build()
++    con = duckdb.connect(str(DB_PATH), read_only=True)
++    for b in _yaml("03_column_bindings.yml")["bindings"]:
++        cols = {r[1] for r in con.execute(f"PRAGMA table_info('{b['table']}')").fetchall()}
++        assert b["column"] in cols, f"{b['table']}.{b['column']} does not exist"
++    con.close()
++
++def test_technical_metadata_has_sap_field_names():
++    tech = _json("01_technical_metadata.json")
++    blob = json.dumps(tech)
++    for field in ("VBELN", "KUNNR", "WADAT_IST", "AUFNR"):
++        assert field in blob, f"{field} missing from technical metadata"
++
++
++# --- Added during review of Task 4 -----------------------------------------
++# The artifacts passed every original test while carrying three defects that would
++# have surfaced as confidently wrong NL answers rather than as errors.
++
++def test_no_synonym_is_ambiguous():
++    """One phrase must not resolve to two different terms.
++
++    'PO' was a synonym of both Sales Order and Production Order, and 'location' of
++    both Region and Plant. A resolver matching user vocabulary against these lists
++    would silently pick one -- answering a production question with sales data and
++    reporting it as grounded.
++    """
++    from collections import defaultdict
++    owners = defaultdict(set)
++    for t in _yaml("03_glossary.yml")["terms"]:
++        for s in t.get("synonyms") or []:
++            owners[s.lower().strip()].add(t["term"])
++    clashes = {s: sorted(v) for s, v in owners.items() if len(v) > 1}
++    assert clashes == {}, f"ambiguous synonyms: {clashes}"
++
++def test_no_synonym_names_a_different_sap_document():
++    """A synonym must not rename the business object.
++
++    'purchase order' and 'PO' were listed under Sales Order. In SAP a purchase order
++    is a procurement document (EKKO/EKPO); a sales order is VBAK. Treating them as
++    synonyms invites a procurement question to be answered from sales data.
++    """
++    for t in _yaml("03_glossary.yml")["terms"]:
++        syns = {s.lower() for s in (t.get("synonyms") or [])}
++        if t["term"] == "Sales Order":
++            assert "purchase order" not in syns
++            assert "po" not in syns
++
++def test_every_business_binding_has_a_glossary_term():
++    """Bindings are the resolver's map from vocabulary to columns.
++
++    A business-scoped binding whose term no glossary entry defines is unreachable:
++    nothing tells the resolver what words lead to it. Internal bindings are exempt
++    by design -- they are columns the compiler reads, not things users name.
++    """
++    terms = {t["term"] for t in _yaml("03_glossary.yml")["terms"]}
++    bindings = _yaml("03_column_bindings.yml")["bindings"]
++    assert bindings, "no bindings found"
++    unscoped = [b["term"] for b in bindings if not b.get("scope")]
++    assert unscoped == [], f"bindings missing a scope: {unscoped}"
++    assert {b["scope"] for b in bindings} <= {"business", "internal"}
++    orphans = sorted(
++        b["term"] for b in bindings
++        if b["scope"] == "business" and b["term"] not in terms
++    )
++    assert orphans == [], f"business bindings with no glossary term: {orphans}"
++
++def test_metric_terms_are_defined_even_though_unbound():
++    """Metrics are computed, so they have no single column -- but must still be defined.
++
++    Guards the opposite failure from the test above: a metric dropping out of the
++    glossary because it has no binding to anchor it.
++    """
++    terms = {t["term"] for t in _yaml("03_glossary.yml")["terms"]}
++    for metric in ("On-Time Delivery %", "Manufacturing Schedule Adherence %",
++                   "First Pass Yield %", "Eligible Orders"):
++        assert metric in terms, f"{metric} missing from the glossary"

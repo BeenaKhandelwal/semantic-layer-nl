@@ -1,0 +1,1024 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Design</title><style>
+@page { size: A4; margin: 14mm 12mm 16mm 12mm; }
+body {
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-size: 9.6pt; line-height: 1.45; color: #1a1a1a; margin: 0;
+}
+h1 { font-size: 20pt; margin: 0 0 4pt; color: #0f2942;
+     border-bottom: 2.5pt solid #0f2942; padding-bottom: 5pt; }
+h2 { font-size: 14pt; margin: 20pt 0 6pt; color: #0f2942;
+     border-bottom: 0.6pt solid #c3ccd6; padding-bottom: 3pt;
+     page-break-after: avoid; }
+h3 { font-size: 11.4pt; margin: 14pt 0 4pt; color: #1c3f5f;
+     page-break-after: avoid; }
+h4 { font-size: 10pt; margin: 11pt 0 3pt; color: #1c3f5f; }
+p { margin: 0 0 6pt; }
+ul, ol { margin: 0 0 7pt; padding-left: 17pt; }
+li { margin-bottom: 2.5pt; }
+code {
+  font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+  font-size: 8.6pt; background: #f1f4f7; padding: 0.6pt 3pt;
+  border-radius: 2pt; color: #7d2000;
+}
+pre {
+  background: #f7f9fb; border: 0.6pt solid #d6dee6; border-left: 2.5pt solid #0f2942;
+  padding: 7pt 9pt; overflow-x: auto; page-break-inside: avoid; margin: 0 0 9pt;
+}
+pre code {
+  background: none; padding: 0; color: #16324a; font-size: 8.2pt; line-height: 1.36;
+  white-space: pre-wrap; word-break: break-word;
+}
+/* Without this, an intrinsically-sized SVG prints at its own width -- the 21in wide
+   diagrams overflowed A4 and Chrome silently CLIPPED the right third of the figure,
+   which is the half that shows how the metadata gets used. Scaled-to-fit is small but
+   whole; clipped is a figure that misrepresents itself. The prose beside each one
+   points at the full-resolution file for anyone who needs to read the labels. */
+img {
+  max-width: 100%; height: auto; display: block;
+  margin: 10pt auto 4pt; page-break-inside: avoid;
+}
+table {
+  border-collapse: collapse; width: 100%; margin: 0 0 10pt;
+  font-size: 8.5pt; page-break-inside: avoid;
+}
+/* overflow-wrap, NOT word-break. `word-break: break-word` is defined as
+   `overflow-wrap: anywhere`, which lets a word break even when the column could have
+   been widened to fit it -- so Chrome's table layout sized a column to one character
+   and printed "provena / nce". `overflow-wrap: break-word` keeps the safety net for
+   identifiers genuinely too long for any column, but sizes columns from whole words. */
+th, td {
+  border: 0.5pt solid #c3ccd6; padding: 3.6pt 5pt; text-align: left;
+  vertical-align: top; overflow-wrap: break-word;
+}
+th { background: #e8edf2; font-weight: 600; color: #0f2942; }
+tr:nth-child(even) td { background: #fafbfc; }
+blockquote {
+  margin: 0 0 8pt; padding: 5pt 10pt; border-left: 2.5pt solid #7aa0c0;
+  background: #f5f8fb; color: #26445e;
+}
+hr { border: none; border-top: 0.6pt solid #d6dee6; margin: 14pt 0; }
+strong { color: #0f2942; }
+a { color: #1c5f9e; text-decoration: none; }
+</style></head><body>
+<h1 id="semantic-layer-for-natural-language-querying-design-spec">Semantic Layer for Natural-Language Querying — Design Spec</h1>
+<p><strong>Date:</strong> 2026-08-07
+<strong>Status:</strong> Design approved pending user review
+<strong>Source material:</strong> <code>C:\Users\legion\Downloads\export_3382893882042191526.pdf</code> (two posts: semantic metadata enrichment from SAP; On-Time Delivery KPI lineage)</p>
+<hr />
+<h2 id="1-goal">1. Goal</h2>
+<p>Produce a single deliverable: a <strong>step-by-step implementation guide for building a semantic layer whose success criterion is trustworthy natural-language querying</strong>, accompanied by a small runnable reference implementation.</p>
+<p>The guide must show, phase by phase, the <strong>actual metadata artifact</strong> produced at the end of each phase, carried across one continuous worked example with sample data — so a reader sees the same asset get progressively richer, and sees exactly which NL-query failure each phase eliminates.</p>
+<h3 id="11-non-goals">1.1 Non-goals</h3>
+<ul>
+<li>Not a LinkedIn post or article. (Ambiguity resolved: the user reframed the ask to "step by step implementation guide which can help in query in natural language".)</li>
+<li>Not a vendor product evaluation. The semantic model is tool-neutral YAML; portability notes are a short appendix, not a chapter.</li>
+<li>Not a governance/compliance implementation. Catalog metadata supports discovery; it is not a substitute for policy enforcement, consent management, access controls, or retention automation. The guide states this limit explicitly where governance fields appear.</li>
+<li>Not a text-to-SQL research survey. Exactly one architecture is specified and built (Section 4).</li>
+</ul>
+<hr />
+<h2 id="2-organizing-thesis">2. Organizing thesis</h2>
+<p><strong>The semantic layer is not the destination. It is the grounding layer that makes natural-language querying trustworthy.</strong></p>
+<p>Every metadata phase in the guide justifies itself by closing one concrete NL failure mode:</p>
+<table>
+<thead>
+<tr>
+<th>Missing metadata</th>
+<th>NL failure it causes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Business glossary + synonyms</td>
+<td>Model cannot map "client number" to <code>party_key</code>; question fails or binds to the wrong column</td>
+</tr>
+<tr>
+<td>Declared grain + join cardinality</td>
+<td>Split deliveries and rework loops silently double-count; answer is wrong and looks right</td>
+</tr>
+<tr>
+<td>Governed metric definition</td>
+<td>Model invents its own arithmetic; two users get two numbers for one question</td>
+</tr>
+<tr>
+<td>Business process &amp; event model</td>
+<td>Model can answer <em>what</em> happened, never <em>why</em></td>
+</tr>
+<tr>
+<td>Data-quality contract</td>
+<td>Answer computed from incomplete inputs is returned with false confidence</td>
+</tr>
+<tr>
+<td>Published catalog entry</td>
+<td>Answer arrives with no provenance, so no one can defend it in a review</td>
+</tr>
+</tbody>
+</table>
+<p>The guide is structured so this table is <em>demonstrated</em>, not asserted: each phase's section ends with a before/after of the same NL question.</p>
+<hr />
+<h2 id="3-domain-and-worked-example">3. Domain and worked example</h2>
+<p><strong>Domain: SAP Plan-to-Deliver</strong> — manufacturing through delivery. This extends the source posts' Order-to-Cash scope upstream into production, because the diagnostic NL question ("why did it drop?") is unanswerable without manufacturing phases.</p>
+<h3 id="31-anchor-kpi">3.1 Anchor KPI</h3>
+<p><strong>On-Time Delivery % (<code>on_time_delivery_pct</code>)</strong>
+<code>(orders delivered on or before promised delivery date / eligible orders due for delivery) × 100</code>
+Grain: one record per customer order. Exclusions: cancelled orders. Refresh: daily.</p>
+<h3 id="32-the-two-exemplar-nl-queries">3.2 The two exemplar NL queries</h3>
+<p>These drive every design decision. Query 2 is the reason manufacturing is in scope.</p>
+<p>The demo's as-of date is <strong>2026-08-07</strong>, so "last month" resolves to <strong>2026-07</strong>. June 2026 is the comparison window.</p>
+<p><strong>Query 1 — descriptive</strong></p>
+<blockquote>
+<p>"On-time delivery for India warehouses last month"</p>
+</blockquote>
+<p>Resolves to: metric <code>on_time_delivery_pct</code>; filters <code>region=IN</code>, <code>month=2026-07</code>; grain <code>order</code>; exclusions <code>cancelled</code>, <code>not-yet-due</code>. Returns:</p>
+<blockquote>
+<p><strong>87.3%</strong> — 48 of 55 eligible orders delivered on or before promised date. Provenance: <code>SAP SD → PP → QM → MM/EWM → TM</code>. Trust: <code>TRUSTED</code>.</p>
+</blockquote>
+<p><code>87.3%</code> is <code>48/55 = 87.2727%</code>, rounded to one decimal for display. Tests assert the unrounded ratio.</p>
+<p><strong>Query 2 — diagnostic</strong></p>
+<blockquote>
+<p>"Why did on-time delivery drop for India warehouses last month?"</p>
+</blockquote>
+<p>Resolves to: same metric and filters, broken out by <code>delay_attribution_phase</code>, compared against the prior month. Returns:</p>
+<blockquote>
+<p><strong>87.3%, down 8.9pp from 96.2% in June</strong> (25 of 26 eligible). 7 orders were late. Attribution: <strong>quality inspection 4</strong>, transportation 2, production execution 1. On those 4 orders, QM usage decision ran an average <strong>4.75 days over its 1.0-day standard, against 0 days of available slack</strong> — the promise left no room to absorb it. Plant 1010.</p>
+</blockquote>
+<p>Both answers are computed from the committed sample data (Section 5) and asserted in the acceptance criteria (Section 8), so every figure in the guide is reproducible rather than illustrative.</p>
+<p>Query 1 needs only the glossary, grain, and metric definition. Query 2 additionally needs per-phase timestamps, per-phase planned baselines, and a variance-attribution rule <strong>defined once in the semantic model</strong>. That is the payoff for Phase 4, and the reason manufacturing is in scope.</p>
+<h3 id="33-business-process-phases-manufacturing-delivery">3.3 Business process phases (manufacturing → delivery)</h3>
+<p>Twelve phases. Each is a row in <code>04_process_model.yml</code>, which carries the warehouse
+column that materializes the phase timestamp. The SAP fields below are the <em>business</em>
+provenance of each event and are illustrative: only those with a row in
+<code>01_technical_metadata.json</code> are harvested from DDIC, and <code>mrp_date</code> / <code>release_date</code>
+are synthesized by the generator rather than extracted, so they have no DDIC entry.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Phase</th>
+<th>System / module</th>
+<th>Business event</th>
+<th>Timestamp field</th>
+<th>Std. duration (days)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Demand &amp; order capture</td>
+<td>SAP SD</td>
+<td>Sales order created</td>
+<td><code>VBAK-ERDAT</code></td>
+<td>0</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Requirements planning</td>
+<td>SAP PP (MRP)</td>
+<td>Planned order created</td>
+<td><code>PLAF-PSTTR</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Production order release</td>
+<td>SAP PP</td>
+<td>Production order released</td>
+<td><code>AFKO-GSTRP</code> / <code>GLTRP</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Material staging &amp; issue</td>
+<td>SAP MM</td>
+<td>Goods issue to production order</td>
+<td><code>MSEG-BUDAT</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Production execution</td>
+<td>SAP PP</td>
+<td>Operation confirmed</td>
+<td><code>AFRU-BUDAT</code></td>
+<td>3</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Quality inspection</td>
+<td>SAP QM</td>
+<td>Usage decision (accept / reject / rework)</td>
+<td><code>QALS-VDATUM</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Goods receipt to stock</td>
+<td>SAP MM / EWM</td>
+<td>GR posted to unrestricted stock</td>
+<td><code>MKPF-BUDAT</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Picking &amp; packing</td>
+<td>SAP EWM</td>
+<td>Picking completed</td>
+<td><code>picking_completed_timestamp</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Goods issue / dispatch</td>
+<td>SAP LE-SHP</td>
+<td>Actual goods issue</td>
+<td><code>LIKP-WADAT_IST</code></td>
+<td>0</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Transportation</td>
+<td>SAP TM</td>
+<td>Shipment dispatched</td>
+<td><code>VTTK-DPTBG</code></td>
+<td>3</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Delivery confirmation</td>
+<td>SAP TM / LE</td>
+<td>POD / delivery confirmed</td>
+<td><code>delivery_timestamp</code></td>
+<td>0</td>
+</tr>
+<tr>
+<td>12</td>
+<td>Billing</td>
+<td>SAP SD</td>
+<td>Invoice created</td>
+<td><code>VBRK-FKDAT</code></td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<h3 id="34-variance-attribution-model-makes-why-computable">3.4 Variance attribution model (makes "why" computable)</h3>
+<p>Per order, for each phase: <code>actual_duration_days</code> from consecutive event timestamps; <code>variance_days = actual_duration_days − standard_duration_days</code>.</p>
+<pre><code>delay_attribution_phase =
+  argmax(variance_days) over the 9 variance spans (phase_seq 2..10),
+  ties broken to the lowest phase_seq,
+  evaluated only for orders where delivery_date &gt; promised_delivery_date
+</code></pre>
+<p>Available slack per order = <code>promised_delivery_date − order_date − Σ standard_duration_days</code>.</p>
+<p>This is defined in <code>05_semantic_model.yml</code> as a governed derived dimension, computed in SQL by the compiler. The LLM never derives it.</p>
+<p>Phase 1 is the chain's start point rather than a span, phase 11 is a 0-day event folded
+into <code>var_shipment</code>, and phase 12 follows delivery — so 9 of the 12 phases are emittable
+attribution values. Declaring the other three would let a filter pass the gates and
+return zero rows dressed as an answer.</p>
+<h3 id="35-governed-metrics">3.5 Governed metrics</h3>
+<p>Four, so the guide can show metric interaction and per-phase KPIs rather than a single toy measure.</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Definition</th>
+<th>Grain</th>
+<th>Exclusions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>on_time_delivery_pct</code></td>
+<td>delivered on/before promised ÷ eligible due</td>
+<td>order</td>
+<td>cancelled; not-yet-due</td>
+</tr>
+<tr>
+<td><code>mfg_schedule_adherence_pct</code></td>
+<td>production orders confirmed on/before scheduled finish ÷ released orders</td>
+<td>production_order</td>
+<td>cancelled production orders</td>
+</tr>
+<tr>
+<td><code>first_pass_yield_pct</code></td>
+<td>production orders accepted at the <strong>first</strong> usage decision ÷ production orders inspected</td>
+<td>production_order</td>
+<td>rework re-inspections (2nd+ decision)</td>
+</tr>
+<tr>
+<td><code>production_cycle_time_days</code></td>
+<td>avg(<code>gr_date</code> − <code>release_date</code>)</td>
+<td>production_order</td>
+<td>cancelled orders</td>
+</tr>
+</tbody>
+</table>
+<p><code>first_pass_yield_pct</code> is measured at <strong>production-order</strong> grain, not inspection-lot grain.
+The staging view <code>inspection_by_prod_order</code> aggregates decisions up to the production order,
+so <code>inspection_lot_id</code>, <code>qty_inspected</code> and <code>qty_accepted</code> exist in <code>inspection_lots_raw.csv</code>
+but in no warehouse table. In this dataset both readings return 94.4444% — every lot is 100
+units and every production order has one lot — so the difference is invisible here and would
+surface the moment a lot were partially accepted. The counting reading is the governed one
+because it is the one the warehouse can actually compute.</p>
+<p><code>first_pass_yield_pct</code>'s exclusion is deliberately the rework trap from Section 5 — it demonstrates why an exclusion rule must live in metadata rather than in each analyst's head.</p>
+<hr />
+<h2 id="4-architecture-nl-validated-intent-deterministic-sql">4. Architecture: NL → validated intent → deterministic SQL</h2>
+<p><strong>Decision (explicit):</strong> the model resolves <em>which governed metric, dimensions, and filters</em> a question means. It does <strong>not</strong> write SQL and does <strong>not</strong> write arithmetic. A deterministic compiler turns the validated intent into SQL using the semantic model.</p>
+<pre><code>NL question
+    │
+    ▼
+[1] Retriever      select the relevant slice of semantic metadata
+    │              (glossary terms, synonyms, metrics, dims, process phases)
+    ▼
+[2] Resolver       Claude API, json_schema-constrained → QueryIntent JSON
+    │              {metric, dimensions[], filters[], grain, time_window, intent_type}
+    ▼
+[3] Validator      7 gate checks — reject, never guess
+    │
+    ▼
+[4] Compiler       QueryIntent + semantic_model.yml → SQL   (pure Python, no LLM)
+    │
+    ▼
+[5] Executor       DuckDB
+    │
+    ▼
+[6] Provenance     answer + lineage chain + DQ trust badge + metric definition used
+</code></pre>
+<h3 id="41-why-this-shape">4.1 Why this shape</h3>
+<ul>
+<li><strong>Auditable.</strong> The intent JSON is the reviewable artifact. "Why did it say 96.2%?" is answered by one small object plus a deterministic function, not by an opaque generated query.</li>
+<li><strong>One definition, two consumers.</strong> The same <code>05_semantic_model.yml</code> serves BI dashboards and NL querying. The metric cannot drift between them.</li>
+<li><strong>Testable without an API key.</strong> Compiler, validator, and provenance are pure functions over YAML + golden intents. The full regression suite runs offline.</li>
+<li><strong>Failure is refusal, not fabrication.</strong> An unresolvable question fails the validator gate and returns "I can't answer that with governed metrics; here's what's missing" — instead of confident nonsense.</li>
+</ul>
+<h3 id="42-validator-gates">4.2 Validator gates</h3>
+<ol>
+<li><code>metric</code> exists in the semantic model <strong>and</strong> <code>approval_state == approved</code></li>
+<li>Every <code>dimension</code> is declared for that metric's entity</li>
+<li>Every <code>filter</code> column is bound to a real column and its value is in the declared allowed-values set (or passes the declared type/format)</li>
+<li><code>grain</code> matches the metric's declared grain</li>
+<li>No requested join path introduces fan-out beyond the declared cardinality</li>
+<li><code>time_window</code> resolves to a concrete bounded range</li>
+<li>Required exclusions from the metric definition are present in the compiled predicate</li>
+</ol>
+<p>Gate failures return a structured refusal naming the failed gate.</p>
+<h3 id="43-claude-api-contract">4.3 Claude API contract</h3>
+<p>Grounded in the <code>claude-api</code> skill (read this session; do not answer these from memory when implementing):</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Value</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td><code>claude-opus-5</code></td>
+<td>Current default</td>
+</tr>
+<tr>
+<td>Structured output</td>
+<td><code>client.messages.parse()</code> with a Pydantic <code>QueryIntent</code> model (<code>output_config.format</code> / <code>json_schema</code> under the hood)</td>
+<td>Validated object, retried on schema mismatch; no hand-parsing</td>
+</tr>
+<tr>
+<td><code>thinking</code></td>
+<td><code>{"type": "adaptive"}</code></td>
+<td>Synonym mapping + relative-date arithmetic is non-trivial</td>
+</tr>
+<tr>
+<td><code>output_config.effort</code></td>
+<td><code>medium</code>, with a documented sweep note</td>
+<td>Per-query latency matters; guide instructs readers to sweep <code>low</code>/<code>medium</code>/<code>high</code> on their own eval set</td>
+</tr>
+<tr>
+<td><code>max_tokens</code></td>
+<td><code>16000</code></td>
+<td>Non-streaming; intent objects are small but thinking shares the budget</td>
+</tr>
+<tr>
+<td>Prompt caching</td>
+<td><code>cache_control: {"type": "ephemeral"}</code> on the last <strong>system</strong> block (stable semantic-metadata context); volatile NL question in the user turn</td>
+<td>Semantic context is reused across every query; Opus 5 minimum cacheable prefix is 512 tokens</td>
+</tr>
+<tr>
+<td>Refusal handling</td>
+<td>Check <code>response.stop_reason == "refusal"</code> <strong>before</strong> reading <code>content</code></td>
+<td>Required on Opus 5</td>
+</tr>
+</tbody>
+</table>
+<p>Sampling parameters (<code>temperature</code>, <code>top_p</code>, <code>top_k</code>) and <code>budget_tokens</code> are <strong>not</strong> used — they return 400 on Opus 5.</p>
+<h3 id="44-offline-mode-required-not-optional">4.4 Offline mode (required, not optional)</h3>
+<p><code>ANTHROPIC_API_KEY</code> is not set in the target environment. The deliverable therefore ships <code>tests/golden_intents.json</code> — hand-authored <code>QueryIntent</code> objects for 12 canonical questions. Everything except the resolver runs with zero API calls: warehouse build, compiler, validator, provenance, all tests. <code>ask.py</code> takes <code>--offline</code> to compile a golden intent by question ID. The guide states this up front so a reader without a key still gets a working system.</p>
+<hr />
+<h2 id="5-sample-data">5. Sample data</h2>
+<p>Two competing needs: percentages must be <strong>believable</strong> (87.3% is impossible with 6 orders — each order would move the number 16.7pp), and the interesting rows must be <strong>readable</strong>. Resolved by splitting the data into a hand-authored core and a generated filler.</p>
+<h3 id="51-scale">5.1 Scale</h3>
+<p>Windows are cut on <strong><code>promised_delivery_date</code></strong>, declared as the metric's time dimension. As-of date is 2026-08-07, so every July-promised order is due.</p>
+<table>
+<thead>
+<tr>
+<th>Segment</th>
+<th>Orders in window</th>
+<th>Cancelled</th>
+<th>Eligible</th>
+<th>On time</th>
+<th>Late</th>
+<th>OTD</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IN — July 2026 (<strong>Query 1 &amp; 2 target</strong>)</td>
+<td>56</td>
+<td>1</td>
+<td>55</td>
+<td>48</td>
+<td>7</td>
+<td><strong>87.27%</strong></td>
+</tr>
+<tr>
+<td>IN — June 2026 (comparison)</td>
+<td>27</td>
+<td>1</td>
+<td>26</td>
+<td>25</td>
+<td>1</td>
+<td><strong>96.15%</strong></td>
+</tr>
+<tr>
+<td>IN — August 2026</td>
+<td>4</td>
+<td>0</td>
+<td>0 (all not-yet-due)</td>
+<td>—</td>
+<td>—</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td>US — July 2026</td>
+<td>30</td>
+<td>2</td>
+<td>28</td>
+<td>26</td>
+<td>2</td>
+<td>92.86%</td>
+</tr>
+<tr>
+<td>US — June 2026</td>
+<td>15</td>
+<td>0</td>
+<td>15</td>
+<td>14</td>
+<td>1</td>
+<td>93.33%</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>132</strong></td>
+<td>4</td>
+<td>124</td>
+<td>113</td>
+<td>11</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>The 7 late IN/July orders attribute as <strong>quality inspection 4, transportation 2, production execution 1</strong> — the answer Query 2 must produce.</p>
+<p>The drop is <code>96.1538 − 87.2727</code> = <strong>8.88pp</strong>, reported as 8.9pp.</p>
+<p>The August window carries the <strong>not-yet-due</strong> exclusion: 4 orders promised after the as-of date, so the eligible denominator is 0 and the metric must return "no eligible orders" rather than 0% or a divide-by-zero.</p>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Values</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Plant</td>
+<td><code>1010</code> Pune, IN · <code>1710</code> Plano, US</td>
+</tr>
+<tr>
+<td>Warehouse</td>
+<td><code>WH-IN-01</code> · <code>WH-US-01</code></td>
+</tr>
+<tr>
+<td>Carrier</td>
+<td><code>BLUEDART</code> · <code>FEDEX</code></td>
+</tr>
+<tr>
+<td>Region</td>
+<td><code>IN</code> · <code>US</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="52-hand-authored-vs-generated">5.2 Hand-authored vs. generated</h3>
+<ul>
+<li><strong><code>data/seed_core.csv</code> — 20 hand-authored orders.</strong> Every defect in 5.3, every late order, and the full manufacturing event chain for each. These are the rows the guide prints and walks through line by line, and the rows the tests assert on by ID.</li>
+<li><strong><code>data/generate.py</code> — deterministic filler.</strong> Fixed seed (<code>random.Random(20260807)</code>), no wall-clock, no network. Produces the remaining 112 well-behaved on-time orders needed to hit the denominators above. Committed alongside its output CSVs, so the repo works without running it and the numbers never drift.</li>
+</ul>
+<p>Every figure in the guide traces to committed CSVs. The generator makes the aggregates realistic; it does not make them arbitrary.</p>
+<p><strong>Raw extract files</strong> (SAP-shaped, in <code>data/</code>): <code>sales_orders_raw.csv</code>, <code>production_orders_raw.csv</code>, <code>inspection_lots_raw.csv</code>, <code>goods_movements_raw.csv</code>, <code>deliveries_raw.csv</code>, <code>shipments_raw.csv</code>.</p>
+<h3 id="53-deliberate-defects-each-teaches-one-lesson">5.3 Deliberate defects — each teaches one lesson</h3>
+<p>All in <code>seed_core.csv</code>, all in the IN / July window.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Defect</th>
+<th>Where</th>
+<th>Lesson it forces</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Cancelled order</td>
+<td><code>SO-1007</code>, <code>order_status = CANC</code></td>
+<td>Exclusion must be in metadata, or the denominator inflates</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Null <code>delivery_timestamp</code>, in transit, promised date in the future</td>
+<td><code>SO-1013</code></td>
+<td>Must <strong>not</strong> count as late; completeness rule needs a scoped predicate, not a blanket not-null</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Rework loop — two QM usage decisions on one lot</strong></td>
+<td><code>SO-1004</code> / lot <code>QL-4004</code></td>
+<td>Fan-out double-count; <code>first_pass_yield_pct</code> needs "first decision only" as a governed exclusion</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Split deliveries — 6 eligible IN/July orders have 2 delivery rows each</strong>, incl. <code>SO-1009</code> → <code>DLV-2009A</code> (on time), <code>DLV-2009B</code> (late)</td>
+<td>Grain double-count. Partial shipment is normal SAP behaviour, so this is the realistic trap, not a contrived one</td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Promised date changed mid-flight</td>
+<td><code>SO-1011</code> (2026-07-18 → 2026-07-24)</td>
+<td>Which promise is measured against? Forces an explicit SCD-2 / as-of decision in metadata</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Make-to-stock order, no production order</td>
+<td><code>SO-1015</code></td>
+<td>LEFT JOIN semantics; manufacturing phases legitimately absent and must not null out the row or the metric</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Late orders with QM-dominated variance</td>
+<td><code>SO-1002</code>, <code>SO-1004</code>, <code>SO-1006</code>, <code>SO-1010</code></td>
+<td>Produces Query 2's attribution answer, hand-verifiable from 4 printed rows</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Late orders attributed elsewhere</td>
+<td><code>SO-1003</code>, <code>SO-1009</code> (transport) · <code>SO-1005</code> (production)</td>
+<td>Attribution must discriminate, not always blame QM</td>
+</tr>
+</tbody>
+</table>
+<h3 id="54-the-wrong-answer-worked">5.4 The wrong answer, worked</h3>
+<p>Defects 3 and 4 are load-bearing: they are why declaring the grain stops being ceremony. The guide opens with the wrong answer and derives it explicitly.</p>
+<p>An analyst joins <code>fact_order_delivery</code> to the delivery table and computes the metric at <strong>delivery</strong> grain instead of <strong>order</strong> grain. 6 of the 55 eligible IN/July orders shipped in two parts, so the row count becomes 61:</p>
+<ul>
+<li>5 split orders delivered both legs on time (<code>SO-1012</code>, <code>SO-1014</code>, <code>SO-1016</code>, <code>SO-1017</code>, <code>SO-1018</code>) → 2 on-time rows each</li>
+<li><code>SO-1009</code> delivered leg A on time and leg B late → 1 on-time row, 1 late row. At order grain it is <strong>late</strong> (the order isn't complete until the last leg lands).</li>
+</ul>
+<p>Arithmetic:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>On time</th>
+<th>Denominator</th>
+<th>OTD</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Grain-correct (order)</td>
+<td>48</td>
+<td>55</td>
+<td><strong>87.27%</strong></td>
+</tr>
+<tr>
+<td>Naive (delivery)</td>
+<td>43 non-split + 10 split legs + 1 (<code>SO-1009</code> leg A) = <strong>54</strong></td>
+<td>61</td>
+<td><strong>88.52%</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The naive answer is <strong>1.25pp too high</strong> — and <em>higher</em> is the dangerous direction. The error flatters the number, so nobody questions it. It is close enough to pass review and close enough to put in a board deck.</p>
+<p>Worse, the bias direction depends on the data: a fully on-time split order pulls the naive figure <strong>up</strong>, a fully late one pulls it <strong>down</strong>. So the error is not even a consistent offset you could learn to correct for. Grain mistakes do not announce themselves with absurd values; they quietly move the number by roughly the amount people argue about in review meetings. A validator that checks declared grain catches this. Eyeballing the output does not.</p>
+<p>The same trap appears in <code>first_pass_yield_pct</code>: counting <code>SO-1004</code>'s rework re-inspection gives 52/55 = <strong>94.55%</strong> instead of the correct 51/54 = <strong>94.44%</strong> — again, wrong in the flattering direction.</p>
+<p><code>test_compiler.py</code> asserts every figure in this section, so the narrative is under test.</p>
+<hr />
+<h2 id="6-build-phases-and-their-artifacts">6. Build phases and their artifacts</h2>
+<p>Every phase section in the guide follows the same five-part shape:
+<strong>INPUT → WORK → OUTPUT (a real file, shown in full or in a faithful excerpt) → GATE (how you know the phase is done) → NL FAILURE CLOSED (before/after on a real question).</strong></p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Name</th>
+<th>Artifact emitted</th>
+<th>NL failure closed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>P0</strong></td>
+<td>Scope &amp; KPI contract</td>
+<td><code>00_kpi_contract.md</code> — the question inventory (12 NL questions the layer must answer), metric owners, decision the KPI supports</td>
+<td>Building a semantic layer with no acceptance test for "done"</td>
+</tr>
+<tr>
+<td><strong>P1</strong></td>
+<td>Technical metadata harvest</td>
+<td><code>01_technical_metadata.json</code> — SAP DDIC extract: tables, fields, data elements, domains, keys, nullability, source system</td>
+<td>Nothing to bind business terms <em>to</em></td>
+</tr>
+<tr>
+<td><strong>P2</strong></td>
+<td>Standardize &amp; model</td>
+<td><code>02_staging_model.sql</code> + <code>02_standardized_metadata.json</code> — canonical names, typed columns, conformed dimensions, <strong>grain declared per table</strong></td>
+<td><code>VBELN</code> vs <code>vbeln</code> vs <code>sales_doc</code> — model can't tell they're one thing</td>
+</tr>
+<tr>
+<td><strong>P3</strong></td>
+<td>Business glossary &amp; semantic binding</td>
+<td><code>03_glossary.yml</code> (terms, definitions, synonyms, allowed values, owner, steward) + <code>03_column_bindings.yml</code> (term → physical column)</td>
+<td>Model can't map "client number" → <code>party_key</code>; can't validate "India" as a region value</td>
+</tr>
+<tr>
+<td><strong>P4</strong></td>
+<td>Business process &amp; event lineage</td>
+<td><code>04_process_model.yml</code> — 12 phases, systems, events, actors, timestamp bindings, standard durations, variance rules</td>
+<td>Model answers <em>what</em>, never <em>why</em>; no phase attribution possible</td>
+</tr>
+<tr>
+<td><strong>P5</strong></td>
+<td>Semantic model &amp; metrics</td>
+<td><code>05_semantic_model.yml</code> — entities, dimensions, joins <strong>with cardinality</strong>, 4 metrics with grain/exclusions/business rules/approval state</td>
+<td>Model invents arithmetic; double-counts on split deliveries and rework</td>
+</tr>
+<tr>
+<td><strong>P6</strong></td>
+<td>Quality contract</td>
+<td><code>06_dq_rules.yml</code> — rules per DQ dimension, each bound to a specific metric input, each with observed score vs. business expectation vs. enforced control</td>
+<td>Confidently wrong answers from incomplete inputs</td>
+</tr>
+<tr>
+<td><strong>P7</strong></td>
+<td>Publish &amp; NL resolution</td>
+<td><code>07_catalog_asset.json</code> (catalog/marketplace entry, lineage, governance fields) + the runnable resolver</td>
+<td>Answers with no provenance; nothing to defend in a review</td>
+</tr>
+</tbody>
+</table>
+<h3 id="61-phase-6-data-quality-rules">6.1 Phase 6 data-quality rules</h3>
+<p>Bound to metric inputs, so a failing rule degrades a specific answer rather than a dashboard-wide red light.</p>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Rule</th>
+<th>Bound to</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Completeness</td>
+<td><code>delivery_timestamp</code> not null <strong>where</strong> <code>promised_delivery_date &lt; current_date</code> and <code>order_status &lt;&gt; 'CANC'</code>; threshold ≤ 2% null</td>
+<td><code>on_time_delivery_pct</code> numerator</td>
+</tr>
+<tr>
+<td>Validity</td>
+<td><code>delivery_status</code> ∈ {<code>DELIVERED</code>,<code>IN_TRANSIT</code>,<code>FAILED</code>,<code>RETURNED</code>}; <code>plant</code> ∈ {<code>1010</code>,<code>1710</code>}</td>
+<td>filter binding</td>
+</tr>
+<tr>
+<td>Uniqueness</td>
+<td>exactly one row per <code>order_id</code> in <code>fact_order_delivery</code></td>
+<td>grain guarantee (defect 4)</td>
+</tr>
+<tr>
+<td>Timeliness</td>
+<td>mart <code>last_refreshed_at</code> within 26 hours</td>
+<td>freshness badge on every answer</td>
+</tr>
+<tr>
+<td>Consistency</td>
+<td><code>release_date ≤ gr_date ≤ goods_issue_date ≤ delivery_date</code></td>
+<td>variance attribution validity</td>
+</tr>
+<tr>
+<td>Accuracy</td>
+<td>recomputed <code>on_time_delivery_pct</code> within 0.1pp of certified monthly snapshot</td>
+<td>metric certification</td>
+</tr>
+</tbody>
+</table>
+<p>Each answer returns a <strong>trust badge</strong> — <code>TRUSTED</code> / <code>DEGRADED (rule X failing)</code> / <code>BLOCKED</code> — derived from these rules. A <code>BLOCKED</code> input returns a refusal, not a number.</p>
+<h3 id="62-phase-7-governance-fields-with-stated-limits">6.2 Phase 7 governance fields (with stated limits)</h3>
+<p><code>07_catalog_asset.json</code> carries: owner, steward, data-subject category, personal-data category, processing purpose, legal basis, access group, retention period, masking policy, certification state, lineage chain, related metrics.</p>
+<p>The guide states plainly: these fields make personal data <strong>discoverable</strong> and support India DPDP readiness work. They do not enforce anything. Enforcement lives in access control, consent management, retention automation, and masking at the platform layer.</p>
+<hr />
+<h2 id="7-deliverable-structure">7. Deliverable structure</h2>
+<pre><code>semantic-layer-nl/
+  README.md                          the guide (primary deliverable)
+  data/
+    seed_core.csv                    20 hand-authored orders (all defects, all late orders)
+    generate.py                      deterministic filler, fixed seed 20260807
+    sales_orders_raw.csv
+    production_orders_raw.csv
+    inspection_lots_raw.csv
+    goods_movements_raw.csv
+    deliveries_raw.csv
+    shipments_raw.csv
+  metadata/
+    00_kpi_contract.md
+    01_technical_metadata.json
+    02_standardized_metadata.json
+    03_glossary.yml
+    03_column_bindings.yml
+    04_process_model.yml
+    05_semantic_model.yml
+    06_dq_rules.yml
+    07_catalog_asset.json
+  sql/
+    02_staging_model.sql
+  src/
+    build_warehouse.py               raw CSV → staging → marts (DuckDB)
+    semantic/
+      loader.py                      parse + structurally validate the YAML model
+      retriever.py                   select the metadata slice for a question
+      resolver.py                    Claude API: NL → QueryIntent (json_schema)
+      validator.py                   the 7 gates
+      compiler.py                    QueryIntent → SQL (deterministic)
+      provenance.py                  answer + lineage + trust badge
+      dq.py                          run 06_dq_rules.yml, emit badge
+    ask.py                           CLI: python ask.py &quot;...&quot;  [--offline ID]
+  tests/                             401 tests, 3 skipped without an API key
+    golden_intents.json              Q1 and Q2 (offline mode); see 10.2
+    test_data.py                     Section 5.1 denominators vs. committed CSVs
+    test_metadata.py                 every artifact parses, no placeholders
+    test_warehouse.py                staging + marts, attribution SQL
+    test_loader.py                   the model parses and structurally validates
+    test_retriever.py                unapproved metrics are never offered
+    test_validator.py                each gate rejects what it must
+    test_compiler.py                 grain / fan-out / exclusion regressions
+    test_provenance.py               lineage chain and trust badge
+    test_dq.py                       each defect trips its intended rule
+    test_end_to_end.py               CLI answers Q1 and Q2 as specified
+    test_diagram.py                  all 3 diagrams match the code they depict
+    test_guide.py                    README claims vs. artifacts and warehouse
+    test_content.py                  all three published documents, same treatment
+    test_standalone.py               the single-file demo runs, and agrees with the
+                                     project it was extracted from
+    test_bundle.py                   the &quot;everything&quot; PDF really is everything
+    test_resolver_live.py            skipped without ANTHROPIC_API_KEY
+  docs/
+    design.md                        this document
+    md2pdf.py                        markdown → styled HTML → PDF (headless Chrome)
+    build_bundle.py                  all 5 documents + all 9 artifacts → one PDF
+    semantic-layer-complete.md       the assembled bundle, regenerated not edited
+    semantic-layer-complete.pdf      the same, printed (no page count stated here:
+                                     the bundle contains this file, so any number
+                                     written here changes the number)
+    diagrams/
+      render_dataflow.py             renders the swimlane  [--check]
+      nl_dataflow.svg / .png         embedded in the guide
+      render_sources.py              renders the provenance map  [--check]
+      metadata_sources.svg / .png    embedded in the guide
+      render_grain.py                renders the two-counting-rules figure that
+                                     opens the Medium post -- no jargon, one
+                                     order, three hand-counted rows  [--check]
+      grain_two_ways.svg / .png      the Medium post's lead image
+  content/                           the three published deliverables
+    linkedin-post.md                 part 1, ~250 words
+    linkedin-article.md              part 2, the long-form walkthrough
+    medium-post.template.md          part 3's prose, with {{...}} splice markers
+    medium-post.md                   part 3, generated -- never hand-edited
+    medium-publishing-checklist.md   title, tags, images, canonical URL, sequencing:
+                                     the working notes, kept out of the article
+    build_medium_post.py             splices real code and real output into the
+                                     template, so the published code cannot drift
+                                     from the tested code
+    medium-kit.md                    part 3 as a publication kit, generated: cover,
+                                     the article with the code lifted out, checklist
+    medium-code.md                   the lifted code on its own, with its sha256
+    build_medium_kit.py              derives both from medium-post.md, so the split
+                                     copies cannot drift from the source either
+    *.html / *.pdf                   each part rendered for review; the HTML is
+                                     compared byte-for-byte against a fresh render,
+                                     so a stale copy fails the suite
+  standalone/
+    semantic_layer_demo.py           the whole architecture in one runnable file:
+                                     embedded data, inline metadata, 7 gates,
+                                     compiler, diagnostic. pip install duckdb pyyaml
+  appendix/
+    portability.md                   mapping to dbt MetricFlow, Cube,
+                                     Databricks Unity Catalog, Atlan,
+                                     Collibra, SAP Datasphere
+  verify_acceptance.py               measures Section 8, one verdict per criterion
+</code></pre>
+<h3 id="71-guide-reading-order">7.1 Guide reading order</h3>
+<ol>
+<li>Why NL querying fails without a semantic layer (the two exemplar queries, wrong answers first)</li>
+<li>The Plan-to-Deliver process and the anchor KPI</li>
+<li>Phases P0–P7, one section each, artifact shown</li>
+<li>The NL resolution path end to end (retriever → resolver → validator → compiler → provenance)</li>
+<li>Running it yourself (with and without an API key)</li>
+<li>What this does <strong>not</strong> do (governance limits, scale limits, single-fact-table limits)</li>
+<li>Appendix: portability</li>
+</ol>
+<hr />
+<h2 id="8-acceptance-criteria">8. Acceptance criteria</h2>
+<p>The deliverable is done when all of the following hold:</p>
+<ol>
+<li><code>python src/build_warehouse.py</code> builds the DuckDB warehouse from the committed CSVs with no manual steps and no network access.</li>
+<li><code>python src/ask.py --offline Q1</code> returns <strong>87.3%</strong> (48/55) for India / 2026-07 with the full provenance chain and a <code>TRUSTED</code> badge.</li>
+<li><code>python src/ask.py --offline Q2</code> returns <strong>87.3%, −8.9pp vs. 96.2%</strong>, with attribution <code>quality inspection 4, transportation 2, production execution 1</code>.</li>
+<li><code>pytest</code> passes with <strong>no</strong> <code>ANTHROPIC_API_KEY</code> set; live resolver tests skip cleanly.</li>
+<li><code>test_compiler.py</code> asserts the grain-correct <strong>87.27% (48/55)</strong> and the naive delivery-grain <strong>88.52% (54/61)</strong> from Section 5.4, plus FPY <strong>94.44% (51/54)</strong> vs. naive <strong>94.55% (52/55)</strong> — the "wrong answer first" narrative is under test, including that both errors overstate.</li>
+<li><code>test_dq.py</code> proves each of the 8 seeded defects trips its intended rule and no others.</li>
+<li><code>test_data.py</code> asserts every denominator in Section 5.1 against the committed CSVs, so spec and data cannot drift.</li>
+<li><code>python data/generate.py</code> is deterministic: re-running it leaves the CSVs byte-identical.</li>
+<li>Every one of the 9 metadata artifacts exists as a real, parseable file — no placeholders, no <code>TBD</code>. (Nine files across eight phases: P3 emits both <code>03_glossary.yml</code> and <code>03_column_bindings.yml</code>.)</li>
+<li>Each phase section in <code>README.md</code> names the specific NL failure it closes, with a before/after.</li>
+<li>The governance-limits statement appears in the guide body, not buried in an appendix.</li>
+<li>With a valid <code>ANTHROPIC_API_KEY</code>, <code>python src/ask.py "on-time delivery for India warehouses last month"</code> produces an intent matching golden intent <code>Q1</code>.</li>
+</ol>
+<p>Two criteria were added after the spec's original list of 12. They are numbered 12 and 13 by <code>verify_acceptance.py</code> and labelled additive rather than renumbering the list above, so the spec's numbering still matches the plan it came from:</p>
+<ul>
+<li><strong>12 (additive).</strong> The dataflow diagram is committed, current, and embedded: <code>docs/diagrams/nl_dataflow.svg</code> and <code>.png</code> exist, <code>render_dataflow.py --check</code> exits 0, and <code>README.md</code> embeds the SVG.</li>
+<li><strong>13 (additive).</strong> The metadata sourcing map is committed, current, embedded — and <em>artifact-backed</em>: every one of its 13 source→artifact edges carries a <code>probe</code> string that must occur in the artifact it points at, and the figure's central claim (exactly one machine-harvestable artifact) still holds. A provenance diagram is the one kind that nothing else can catch lying, since "this came from SAP DDIC" is unfalsifiable unless something checks the file.</li>
+</ul>
+<p>The third figure, <code>grain_two_ways</code>, has no acceptance criterion — it was added for the
+Medium post's plain-English opening, after the criteria were settled, and renumbering to
+accommodate it would break the correspondence above. <code>tests/test_diagram.py</code> covers it to
+the same standard: every figure in it is recomputed from the warehouse and from the
+standalone demo's embedded rows, so the friendly simplification cannot drift into a lie.</p>
+<hr />
+<h2 id="9-where-this-lives-settled">9. Where this lives — settled</h2>
+<p><code>C:\Users\legion</code> is not a git repository, so committing this design document needed a
+home. Three options were on the table: leave it uncommitted, <code>git init</code> a specs-only repo
+under <code>C:\Users\legion\docs\</code>, or give the deliverable its own repo and move the spec into
+it.</p>
+<p><strong>Resolved as (c).</strong> The deliverable is a self-contained runnable project and benefits
+from its own history, and a spec that travels with the code it specifies is the one that
+gets updated when the code changes. This document is <code>docs/design.md</code> in
+<code>C:\Users\legion\semantic-layer-nl\</code>, built on branch <code>feat/semantic-layer-mvp</code>.</p>
+<hr />
+<h2 id="10-mvp-scope">10. MVP scope</h2>
+<p>The first increment must be <strong>runnable and honest</strong>, not fully featured. Definition of the MVP: <em>a reader clones the project, runs two commands with no API key, and gets the guide's two headline answers with correct provenance — and the tests prove the numbers.</em></p>
+<h3 id="101-in-the-mvp">10.1 In the MVP</h3>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>MVP content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Metadata artifacts</td>
+<td><strong>All 8.</strong> These are the deliverable — the guide is <em>about</em> the artifact each phase emits. Cutting any would gut the thesis.</td>
+</tr>
+<tr>
+<td>Business process</td>
+<td><strong>All 12 phases</strong> in <code>04_process_model.yml</code>, with SAP field bindings and standard durations</td>
+</tr>
+<tr>
+<td>Metrics</td>
+<td><strong>3</strong> — <code>on_time_delivery_pct</code> (full narrative), <code>mfg_schedule_adherence_pct</code> (manufacturing KPI), <code>first_pass_yield_pct</code> (proves a second grain + the rework exclusion)</td>
+</tr>
+<tr>
+<td>Sample data</td>
+<td>Full Section 5 dataset — <code>seed_core.csv</code> + generator, all 8 defects</td>
+</tr>
+<tr>
+<td>Pipeline</td>
+<td><code>build_warehouse.py</code>, <code>loader</code>, <code>validator</code>, <code>compiler</code>, <code>provenance</code>, <code>dq</code></td>
+</tr>
+<tr>
+<td>NL path</td>
+<td>Offline via golden intents for <strong>Q1 and Q2</strong>; <code>resolver.py</code> present and callable, exercised only when a key exists</td>
+</tr>
+<tr>
+<td>Tests</td>
+<td><code>test_compiler.py</code>, <code>test_dq.py</code>, <code>test_data.py</code> — acceptance criteria 1–11</td>
+</tr>
+<tr>
+<td>Guide</td>
+<td><code>README.md</code> covering P0–P7 with each phase's artifact and the NL failure it closes</td>
+</tr>
+</tbody>
+</table>
+<h3 id="102-deferred-past-the-mvp">10.2 Deferred past the MVP</h3>
+<table>
+<thead>
+<tr>
+<th>Deferred</th>
+<th>Why it's safe to defer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>production_cycle_time_days</code></td>
+<td>A plain average over columns the other three metrics already materialize. Cheapest later addition, least instructive to build now.</td>
+</tr>
+<tr>
+<td>Golden intents beyond Q1/Q2 (10 of 12)</td>
+<td>Q1 and Q2 exercise every component: descriptive path, diagnostic path, grain, exclusions, attribution. The other 10 add coverage, not capability.</td>
+</tr>
+<tr>
+<td>Live-resolver eval / effort sweep</td>
+<td>Cannot be run or verified in this environment (no API key). Documented as instructions, not asserted as results.</td>
+</tr>
+</tbody>
+</table>
+<p>Two rows that were on this list are no longer deferred, and are recorded here because
+what changed is worth keeping:</p>
+<table>
+<thead>
+<tr>
+<th>Was deferred</th>
+<th>What actually shipped</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>appendix/portability.md</code> as a stub table</td>
+<td>Ships as the full mapping: every concept across dbt MetricFlow, Cube, Unity Catalog and Datasphere, a second table for Atlan and Collibra, and the three gaps a platform move inherits (grain is rarely first-class, <code>allowed_values</code> rarely enforces, <code>approval_state</code> is a tag almost everywhere).</td>
+</tr>
+<tr>
+<td><code>test_validator.py</code> per-gate rejection tests</td>
+<td>Ships with 22 tests. Deferring these turned out to be the wrong call: writing them found that <code>exclusions_applied</code> — alone among the seven — had never been observed refusing anything. It was implemented, registered, and asserted <code>True</code> on the happy path, which is indistinguishable from a gate that always passes. It now has four rejection tests (dropped block, empty list, missing <code>predicate</code>, missing <code>key</code>), plus one that fails if any future gate is added without a rejection test.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="103-mvp-acceptance">10.3 MVP acceptance</h3>
+<p>Acceptance criteria 1–11 in Section 8 apply as written. Criterion 12 (live resolver) is documented but <strong>not verifiable here</strong> — the guide will state that plainly rather than imply it was tested.</p>
+<hr />
+<h2 id="11-decisions-already-settled">11. Decisions already settled</h2>
+<p>Recorded so they are not relitigated during implementation:</p>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Choice</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Artifact type</td>
+<td>One implementation guide + runnable reference implementation. Not a post, not three documents.</td>
+</tr>
+<tr>
+<td>Success criterion</td>
+<td>Trustworthy NL querying</td>
+</tr>
+<tr>
+<td>Domain</td>
+<td>SAP Plan-to-Deliver (manufacturing through delivery), continuing the source posts' narrative</td>
+</tr>
+<tr>
+<td>"Phases of metadata"</td>
+<td>The metadata artifact emitted at the end of each build phase; the same asset gets progressively richer</td>
+</tr>
+<tr>
+<td>NL layer approach</td>
+<td>Tool-neutral YAML semantic model <strong>plus</strong> runnable demo (DuckDB + Claude API + validation gate)</td>
+</tr>
+<tr>
+<td>Query generation</td>
+<td>NL → validated intent JSON → deterministic compiler. The model never writes SQL.</td>
+</tr>
+<tr>
+<td>Sample data</td>
+<td>132 orders (20 hand-authored + deterministic filler), 2 plants / 2 warehouses / 2 carriers, 8 deliberate defects. Sized so 87.3% and 96.2% are real, not illustrative.</td>
+</tr>
+<tr>
+<td>Offline operation</td>
+<td>Required — golden intents make everything but the resolver runnable without an API key</td>
+</tr>
+<tr>
+<td>Model</td>
+<td><code>claude-opus-5</code>, adaptive thinking, <code>messages.parse()</code> with a Pydantic intent schema</td>
+</tr>
+<tr>
+<td>Build strategy</td>
+<td>MVP first (Section 10): runnable end to end with no API key, 3 metrics, all 8 artifacts, Q1 + Q2 answering correctly under test</td>
+</tr>
+</tbody>
+</table>
+</body></html>
