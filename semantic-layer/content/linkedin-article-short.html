@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Linkedin Article Short</title><style>
+@page { size: A4; margin: 14mm 12mm 16mm 12mm; }
+body {
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-size: 9.6pt; line-height: 1.45; color: #1a1a1a; margin: 0;
+}
+h1 { font-size: 20pt; margin: 0 0 4pt; color: #0f2942;
+     border-bottom: 2.5pt solid #0f2942; padding-bottom: 5pt; }
+h2 { font-size: 14pt; margin: 20pt 0 6pt; color: #0f2942;
+     border-bottom: 0.6pt solid #c3ccd6; padding-bottom: 3pt;
+     page-break-after: avoid; }
+h3 { font-size: 11.4pt; margin: 14pt 0 4pt; color: #1c3f5f;
+     page-break-after: avoid; }
+h4 { font-size: 10pt; margin: 11pt 0 3pt; color: #1c3f5f; }
+p { margin: 0 0 6pt; }
+ul, ol { margin: 0 0 7pt; padding-left: 17pt; }
+li { margin-bottom: 2.5pt; }
+code {
+  font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+  font-size: 8.6pt; background: #f1f4f7; padding: 0.6pt 3pt;
+  border-radius: 2pt; color: #7d2000;
+}
+pre {
+  background: #f7f9fb; border: 0.6pt solid #d6dee6; border-left: 2.5pt solid #0f2942;
+  padding: 7pt 9pt; overflow-x: auto; page-break-inside: avoid; margin: 0 0 9pt;
+}
+pre code {
+  background: none; padding: 0; color: #16324a; font-size: 8.2pt; line-height: 1.36;
+  white-space: pre-wrap; word-break: break-word;
+}
+/* Without this, an intrinsically-sized SVG prints at its own width -- the 21in wide
+   diagrams overflowed A4 and Chrome silently CLIPPED the right third of the figure,
+   which is the half that shows how the metadata gets used. Scaled-to-fit is small but
+   whole; clipped is a figure that misrepresents itself. The prose beside each one
+   points at the full-resolution file for anyone who needs to read the labels. */
+img {
+  max-width: 100%; height: auto; display: block;
+  margin: 10pt auto 4pt; page-break-inside: avoid;
+}
+table {
+  border-collapse: collapse; width: 100%; margin: 0 0 10pt;
+  font-size: 8.5pt; page-break-inside: avoid;
+}
+/* overflow-wrap, NOT word-break. `word-break: break-word` is defined as
+   `overflow-wrap: anywhere`, which lets a word break even when the column could have
+   been widened to fit it -- so Chrome's table layout sized a column to one character
+   and printed "provena / nce". `overflow-wrap: break-word` keeps the safety net for
+   identifiers genuinely too long for any column, but sizes columns from whole words. */
+th, td {
+  border: 0.5pt solid #c3ccd6; padding: 3.6pt 5pt; text-align: left;
+  vertical-align: top; overflow-wrap: break-word;
+}
+th { background: #e8edf2; font-weight: 600; color: #0f2942; }
+tr:nth-child(even) td { background: #fafbfc; }
+blockquote {
+  margin: 0 0 8pt; padding: 5pt 10pt; border-left: 2.5pt solid #7aa0c0;
+  background: #f5f8fb; color: #26445e;
+}
+hr { border: none; border-top: 0.6pt solid #d6dee6; margin: 14pt 0; }
+strong { color: #0f2942; }
+a { color: #1c5f9e; text-decoration: none; }
+</style></head><body>
+<h1 id="the-semantic-layer-for-bi-and-ai-making-just-ask-the-data-trustworthy">The Semantic Layer for BI and AI: Making "Just Ask the Data" Trustworthy</h1>
+<p><em>The short version. The full write-up, with the code and all the diagrams, is on Medium. Link at the end.</em></p>
+<hr />
+<p>Two people asked the same database the same question on the same day: "on-time delivery for
+India last month." One got 88.5%. The other got 87.3%. One of them is wrong, and nobody in the
+meeting could say which.</p>
+<p>Nothing was broken. No query failed. Both numbers had real SQL behind them that any engineer
+would have signed off on. The only difference was what they counted. One counted orders. The
+other counted shipments. A few orders had shipped in two boxes, so counting shipments counted
+those orders twice. 55 orders arrived in 61 boxes. The gap was small enough to look like
+rounding, and it always made the number look better, so that is the one that reached the slide.</p>
+<p><img alt="One order, two boxes, counted two ways" src="../docs/diagrams/grain_two_ways.png" /></p>
+<p><em>One order that ships in two boxes can be counted as one order or as two shipments. Count the
+shipments and you get 88.5%. Count the orders and you get 87.3%.</em></p>
+<p>Now put an AI in the middle. The moment people ask questions in plain English and a model writes
+the SQL, this stops being a rare slip and becomes the default. The model is not bad at SQL. It is
+guessing at the one thing nobody wrote down: what a single row is supposed to mean. You cannot
+prompt your way out of that, because the fact that is missing was never in the prompt.</p>
+<h2 id="the-fix-in-one-rule">The fix, in one rule</h2>
+<p>The AI never writes SQL and never does the math. It picks an approved metric and fills in a small
+form: which metric, which filters, which dates. A plain compiler turns that form into SQL. And
+seven checks run before any SQL exists at all.</p>
+<p>That last part is the whole game. One of those checks notices when a question is asking at the
+wrong grain, and it refuses to answer instead of quietly handing back 88.5%. The refusal is the
+feature:</p>
+<blockquote>
+<p>I can't answer that. The metric is defined per order, but the question is asking per shipment,
+and aggregating at the wrong grain changes the number.</p>
+</blockquote>
+<p>"I can't answer that, and here is the rule that stopped me" is something you can put in front of
+a CFO. A system that always hands back a number is not.</p>
+<h2 id="the-payoff-is-the-harder-question">The payoff is the harder question</h2>
+<p>"What was the number?" is the easy question. The one people actually ask is "why did it drop?"</p>
+<p>On-time delivery had fallen 8.9 points from the month before, from 96.2% down to 87.3%. The
+obvious suspect was logistics. But on the late orders, transportation had actually run faster
+than planned on 5 of the 7. Logistics was ahead of schedule. The real cause was quality
+inspection, running 4.75 days over a one-day target, with no slack in the schedule to absorb it.</p>
+<p>Without a planned baseline for each step, you would get a confident, reasonable, wrong story, and
+you would send a team to go fix the wrong problem.</p>
+<h2 id="none-of-this-is-magic">None of this is magic</h2>
+<p>It is a handful of small files that write down the things a data crawler can never find for you:
+what a row means, which records to leave out, the agreed definition of a metric, and how long
+each step is supposed to take. Those are the facts that decide whether an answer is right or just
+well-formed. The 88.5% mistake lived in a field no crawler can see, which is why pointing a tool
+at your warehouse and switching on "ask the data" gives you a demo, not something you can trust.</p>
+<p>If two of your dashboards disagreed by a point tomorrow, who on your team could actually tell you
+which one is right? If the answer is "ask Priya," you already have a semantic layer. It just is
+not written down yet.</p>
+<hr />
+<p><strong>The full write-up</strong> walks through it step by step, with the metadata each step produces, the
+seven checks, and a single file you can paste into a terminal and run (no API key, no sign-up):</p>
+<ul>
+<li>Full article on Medium: <em>[paste your Medium link here once published]</em></li>
+<li>Code: <a href="https://github.com/BeenaKhandelwal/semantic-layer-nl">github.com/BeenaKhandelwal/semantic-layer-nl</a></li>
+</ul>
+</body></html>
